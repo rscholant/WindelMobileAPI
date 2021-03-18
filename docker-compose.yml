@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  mysqlsrv:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: 's2crm49y!'
+      MYSQL_DATABASE: 'sinc_replicacao'
+    ports:
+      - '3307:3306'
+    volumes:
+      - ./DB:/var/lib/mysql

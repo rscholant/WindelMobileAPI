@@ -1,0 +1,1 @@
+ssh -i ./.ssh/id_rsa sinc@sinc.windel.com.br
