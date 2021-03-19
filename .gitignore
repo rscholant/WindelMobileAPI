@@ -1,5 +1,6 @@
 node_modules/
-public/
 .env
 .env.prod
+.env.dev
 DB/
+.ssh/server-ec2-integrador.pem
