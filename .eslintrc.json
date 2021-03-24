@@ -21,6 +21,6 @@
         "camelcase": "off",
         "no-console": ["error", {"allow": ["warn", "error", "info"]}],
         "no-unused-vars": "off",
-        "no-restricted-syntax": ["error", "FunctionExpression", "WithStatement"]
+        "strict": "off"
       }
 }
