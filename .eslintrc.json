@@ -21,6 +21,12 @@
         "camelcase": "off",
         "no-console": ["error", {"allow": ["warn", "error", "info"]}],
         "no-unused-vars": "off",
-        "strict": "off"
+        "strict": "off",
+        "prefer-destructuring": ["error", {
+          "array": false,
+          "object": true
+        }, {
+          "enforceForRenamedProperties": false
+        }]
       }
 }

@@ -23,7 +23,7 @@ const databaseReplicacao = require('./common/mysql')(
 );
 
 const checkVersion = require('./util/checkVersion.js');
-const mysql = require('./common/mysql');
+
 const {
   empresa,
   dispositivo,
@@ -201,7 +201,6 @@ app.post('/dispositivo', jsonParser, async (req, res) => {
 
 app.post('/modifications', jsonParser, async (req, res) => {
   if (!req.body.auth) {
-    // no auth = no modifications for ya
     res.send({
       result: false,
       message: "Missing 'auth' on request Body",

@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 function upperCaseAllKey(data) {
   const newData = {};
   for (const key in data) {

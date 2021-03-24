@@ -1,6 +1,14 @@
 /* eslint-disable guard-for-in */
 /* eslint-disable no-restricted-syntax */
 const math = require('mathjs');
+const Sequelize = require('sequelize');
+const { Op } = require('sequelize');
+const {
+  empresa,
+  dispositivo,
+  replicacao,
+  id_control,
+} = require('../migrations/models');
 
 function lowerCaseAllKey(data) {
   const newData = {};
@@ -10,7 +18,7 @@ function lowerCaseAllKey(data) {
 
   return newData;
 }
-async function prepareCondicaopgto(newDados, mysql, dispositivo) {
+async function prepareCondicaopgto(newDados, mysql, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
   newDados.idcondicaopagamento = newDados.idcondpag;
   newDados.percacrescimo = !newDados.acrescimos ? '0' : newDados.acrescimos;
@@ -22,7 +30,7 @@ async function prepareCondicaopgto(newDados, mysql, dispositivo) {
   return newDados;
 }
 
-async function prepareFormapgto(newDados, mysql, dispositivo) {
+async function prepareFormapgto(newDados, mysql, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
   newDados.idformapagamento = newDados.idformapgto;
   switch (newDados.tipo) {
@@ -63,7 +71,7 @@ async function prepareCidade(objeto) {
   return objeto;
 }
 
-async function prepareDefault(objeto, mysql, dispositivo) {
+async function prepareDefault(objeto, mysql, dispositivos) {
   objeto = lowerCaseAllKey(objeto);
   return objeto;
 }
@@ -76,23 +84,40 @@ function clearNull(newDados) {
   }
   return newDados;
 }
-async function preparePessoa(newDados, mysql, dispositivo) {
+async function preparePessoa(newDados, mysql, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
+  const buscaEmpresa = await empresa.findAll({
+    where: {
+      id: dispositivos.empresa_id,
+    },
+  });
 
-  const buscaEmpresa = await mysql.queryOne(
-    `SELECT * FROM empresa WHERE id = ? LIMIT 1`,
-    [dispositivo.empresa_id]
-  );
+  const mask = /(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/;
+  const cnpjEmpresa = String(buscaEmpresa[0].cnpj);
 
-  let buscaDadosEmpresa = await mysql.queryOne(
+  let buscaDadosEmpresa = await replicacao.findAll({
+    attributes: [
+      [Sequelize.json('dados.VENDEDORES'), 'padraoVendedores'],
+      [Sequelize.json('dados.CLIENTES'), 'padraoClientes'],
+      [Sequelize.json('dados.PRODUTOS'), 'padraoProdutos'],
+    ],
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'EMPRESAS',
+      dados: {
+        CNPJCPF: { [Op.like]: cnpjEmpresa.replace(mask, '$1%$2%$3%$4%$5') },
+      },
+    },
+  });
+  /* let buscaDadosEmpresa = await mysql.queryOne(
     `SELECT dados->"$.VENDEDORES" AS padraoVendedores, dados->"$.CLIENTES" AS padraoClientes,
       dados->"$.PRODUTOS" AS padraoProdutos
     FROM replicacao WHERE empresa_id = ? AND tabela = ?
     AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dados->"$.CNPJCPF", '.', ''), '-', ''), '/', ''), ' ', ''), '"', '') = ?
     ORDER BY DATA_OPERACAO DESC
     LIMIT 1`,
-    [dispositivo.empresa_id, 'EMPRESAS', buscaEmpresa.cnpj]
-  );
+    [dispositivo.empresa_id, 'EMPRESAS', ]
+  ); */
 
   if (buscaDadosEmpresa === null) {
     buscaDadosEmpresa = {
@@ -100,36 +125,51 @@ async function preparePessoa(newDados, mysql, dispositivo) {
       padraoClientes: newDados.idempresa,
       padraoProdutos: newDados.idempresa,
     };
+  } else {
+    buscaDadosEmpresa = buscaDadosEmpresa[0].dataValues;
+  }
+  let cidadeResult = await replicacao.findAll({
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'CIDADES',
+      dados: {
+        IDCIDADE: newDados.pri_cidade,
+      },
+    },
+  });
+
+  if (cidadeResult != null && cidadeResult[0].dados) {
+    cidadeResult = lowerCaseAllKey(JSON.parse(cidadeResult[0].dados));
   }
 
-  let cidadeResult = await mysql.queryOne(
-    `SELECT * FROM replicacao WHERE empresa_id = ? AND tabela = ? AND dados->"$.IDCIDADE" = ?`,
-    [dispositivo.empresa_id, 'CIDADES', newDados.pri_cidade]
-  );
-  if (cidadeResult != null && cidadeResult.dados) {
-    cidadeResult = lowerCaseAllKey(JSON.parse(cidadeResult.dados));
+  let paisResult = await replicacao.findAll({
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'PAISES',
+      dados: {
+        IDPAIS: newDados.idpais,
+      },
+    },
+  });
+
+  if (paisResult != null && paisResult[0].dados) {
+    paisResult = lowerCaseAllKey(JSON.parse(paisResult[0].dados));
   }
 
-  let paisResult = await mysql.queryOne(
-    `SELECT * FROM replicacao WHERE empresa_id = ? AND tabela = ? AND dados->"$.IDPAIS" = ?`,
-    [dispositivo.empresa_id, 'PAISES', newDados.idpais]
-  );
-  if (paisResult != null && paisResult.dados) {
-    paisResult = lowerCaseAllKey(JSON.parse(paisResult.dados));
-  }
+  let obsPessoasResult = await replicacao.findAll({
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'OBSPESSOAS',
+      dados: {
+        IDPESSOA: newDados.idpessoa,
+        IDEMPRESA: buscaDadosEmpresa.padraoClientes,
+        IDTIPO_PS: newDados.idtipo_ps,
+      },
+    },
+  });
 
-  let obsPessoasResult = await mysql.queryOne(
-    `SELECT * FROM replicacao WHERE empresa_id = ? AND tabela = ? AND dados->"$.IDPESSOA" = ? AND dados->"$.IDEMPRESA" = ? AND dados->"$.IDTIPO_PS" = ?`,
-    [
-      dispositivo.empresa_id,
-      'OBSPESSOAS',
-      newDados.idpessoa,
-      buscaDadosEmpresa.padraoClientes,
-      newDados.idtipo_ps,
-    ]
-  );
   if (obsPessoasResult != null) {
-    obsPessoasResult = lowerCaseAllKey(JSON.parse(obsPessoasResult.dados));
+    obsPessoasResult = lowerCaseAllKey(JSON.parse(obsPessoasResult[0].dados));
   }
 
   const endereco = {
@@ -210,23 +250,32 @@ async function preparePessoa(newDados, mysql, dispositivo) {
   return newDados;
 }
 
-async function preparePedido(newDados, mysql, dispositivo) {
+async function preparePedido(newDados, mysql, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
 
-  const buscaEmpresa = await mysql.queryOne(
-    `SELECT * FROM empresa WHERE id = ? LIMIT 1`,
-    [dispositivo.empresa_id]
-  );
+  const buscaEmpresa = await empresa.findAll({
+    where: {
+      id: dispositivos.empresa_id,
+    },
+  });
 
-  let buscaDadosEmpresa = await mysql.queryOne(
-    `SELECT dados->"$.VENDEDORES" AS padraoVendedores, dados->"$.CLIENTES" AS padraoClientes,
-      dados->"$.PRODUTOS" AS padraoProdutos
-    FROM replicacao WHERE empresa_id = ? AND tabela = ?
-    AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dados->"$.CNPJCPF", '.', ''), '-', ''), '/', ''), ' ', ''), '"', '') = ?
-    ORDER BY DATA_OPERACAO DESC
-    LIMIT 1`,
-    [dispositivo.empresa_id, 'EMPRESAS', buscaEmpresa.cnpj]
-  );
+  const mask = /(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/;
+  const cnpjEmpresa = String(buscaEmpresa[0].cnpj);
+
+  let buscaDadosEmpresa = await replicacao.findAll({
+    attributes: [
+      [Sequelize.json('dados.VENDEDORES'), 'padraoVendedores'],
+      [Sequelize.json('dados.CLIENTES'), 'padraoClientes'],
+      [Sequelize.json('dados.PRODUTOS'), 'padraoProdutos'],
+    ],
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'EMPRESAS',
+      dados: {
+        CNPJCPF: { [Op.like]: cnpjEmpresa.replace(mask, '$1%$2%$3%$4%$5') },
+      },
+    },
+  });
 
   if (buscaDadosEmpresa === null) {
     buscaDadosEmpresa = {
@@ -234,71 +283,76 @@ async function preparePedido(newDados, mysql, dispositivo) {
       padraoClientes: newDados.idempresa,
       padraoProdutos: newDados.idempresa,
     };
+  } else {
+    buscaDadosEmpresa = buscaDadosEmpresa[0].dataValues;
   }
 
   if (newDados.iddoc) {
     newDados.numero = newDados.iddoc;
   }
-
-  let pessoa = await mysql.queryOne(
-    `
-        SELECT * FROM replicacao
-        WHERE empresa_id = ? AND tabela = ? AND dados->"$.IDEMPRESA" = ? AND dados->"$.IDPESSOA" = ?`,
-    [
-      dispositivo.empresa_id,
-      'PESSOAS',
-      parseInt(buscaDadosEmpresa.padraoClientes, 10),
-      math.hasNumericValue(newDados.idcliente)
-        ? parseInt(newDados.idcliente, 10)
-        : newDados.idcliente,
-    ]
-  );
+  let pessoa = await replicacao.findAll({
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'PESSOAS',
+      dados: {
+        IDEMPRESA: parseInt(buscaDadosEmpresa.padraoClientes, 10),
+        IDPESSOA: math.hasNumericValue(newDados.idcliente)
+          ? parseInt(newDados.idcliente, 10)
+          : newDados.idcliente,
+      },
+    },
+  });
   if (pessoa !== null) {
-    pessoa = JSON.parse(pessoa.dados);
-    pessoa = await preparePessoa(pessoa, mysql, dispositivo);
+    pessoa = JSON.parse(pessoa[0].dados);
+    pessoa = await preparePessoa(pessoa, mysql, dispositivos);
   }
   newDados.cliente = pessoa;
-
-  let condipgto = await mysql.queryOne(
-    `
-        SELECT * FROM replicacao
-        WHERE empresa_id = ? AND tabela = ? AND dados->"$.IDCONDPAG" = ?`,
-    [dispositivo.empresa_id, 'CONDPAG', newDados.idcondicaopgto]
-  );
+  let condipgto = await replicacao.findAll({
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'CONDPAG',
+      dados: {
+        IDCONDPAG: newDados.idcondicaopgto,
+      },
+    },
+  });
   if (condipgto !== null) {
-    condipgto = JSON.parse(condipgto.dados);
-    condipgto = await prepareCondicaopgto(condipgto, mysql, dispositivo);
+    condipgto = JSON.parse(condipgto[0].dados);
+    condipgto = await prepareCondicaopgto(condipgto, mysql, dispositivos);
   }
   newDados.condicaopgto = condipgto;
 
-  let formapgto = await mysql.queryOne(
-    `
-        SELECT * FROM replicacao
-        WHERE empresa_id = ? AND tabela = ? AND dados->"$.IDFORMAPGTO" = ?`,
-    [dispositivo.empresa_id, 'FORMAPGTO', newDados.idformapgto]
-  );
+  let formapgto = await replicacao.findAll({
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'FORMAPGTO',
+      dados: {
+        IDCONDPAG: newDados.idformapgto,
+      },
+    },
+  });
+
   if (formapgto !== null) {
-    formapgto = JSON.parse(formapgto.dados);
-    formapgto = await prepareFormapgto(formapgto, mysql, dispositivo);
+    formapgto = JSON.parse(formapgto[0].dados);
+    formapgto = await prepareFormapgto(formapgto, mysql, dispositivos);
   }
   newDados.formapgto = formapgto;
+  let vendedor = await replicacao.findAll({
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'PESSOAS',
+      dados: {
+        IDEMPRESA: parseInt(buscaDadosEmpresa.padraoClientes, 10),
+        IDPESSOA: math.hasNumericValue(newDados.idvendedor)
+          ? parseInt(newDados.idvendedor, 10)
+          : newDados.idvendedor,
+      },
+    },
+  });
 
-  let vendedor = await mysql.queryOne(
-    `
-        SELECT * FROM replicacao
-        WHERE empresa_id = ? AND tabela = ? AND dados->"$.IDEMPRESA" = ? AND dados->"$.IDPESSOA" = ?`,
-    [
-      dispositivo.empresa_id,
-      'PESSOAS',
-      parseInt(buscaDadosEmpresa.padraoVendedores, 10),
-      math.hasNumericValue(newDados.idvendedor)
-        ? parseInt(newDados.idvendedor, 10)
-        : newDados.idvendedor,
-    ]
-  );
   if (vendedor !== null) {
-    vendedor = JSON.parse(vendedor.dados);
-    vendedor = await preparePessoa(vendedor, mysql, dispositivo);
+    vendedor = JSON.parse(vendedor[0].dados);
+    vendedor = await preparePessoa(vendedor, mysql, dispositivos);
   }
   newDados.vendedor = vendedor;
 
@@ -346,18 +400,16 @@ async function preparePedido(newDados, mysql, dispositivo) {
       break;
   }
   newDados.status = newStatus;
-
-  const produtos = await mysql.query(
-    `
-        SELECT * FROM replicacao
-        WHERE empresa_id = ? AND tabela = ? AND dados->"$.IDEMPRESAPRODUTO" = ? AND dados->"$.IDPEDIDO" = ?`,
-    [
-      dispositivo.empresa_id,
-      'MOBILE_PEDIDO_PRODUTOS',
-      parseInt(buscaDadosEmpresa.padraoProdutos, 10),
-      newDados.idpedido,
-    ]
-  );
+  const produtos = await replicacao.findAll({
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      tabela: 'MOBILE_PEDIDO_PRODUTOS',
+      dados: {
+        IDEMPRESAPRODUTO: parseInt(buscaDadosEmpresa.padraoProdutos, 10),
+        IDPEDIDO: newDados.idpedido,
+      },
+    },
+  });
 
   const produtosPedido = [];
   for (let i = 0; i < produtos.length; i += 1) {
@@ -372,7 +424,7 @@ async function preparePedido(newDados, mysql, dispositivo) {
   return newDados;
 }
 
-async function prepareProduto(newDados, mysql, dispositivo) {
+async function prepareProduto(newDados, mysql, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
 
   newDados.unidademedida = newDados.un;

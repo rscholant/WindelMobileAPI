@@ -1,11 +1,19 @@
 const axios = require('axios');
 const fs = require('fs');
 const UUID = require('uuid');
+const Sequelize = require('sequelize');
+const { Op } = require('sequelize');
 
 let mysql = null;
 
 const prepareItemForMobile = require('./prepareItemForMobile');
 const prepareItemForERP = require('./prepareItemForERP');
+const {
+  empresa,
+  dispositivo,
+  replicacao,
+  id_control,
+} = require('../migrations/models');
 
 function getUTCTime(now) {
   if (!now) {
@@ -43,13 +51,14 @@ module.exports = (expressApp, jsonParser, database) => {
           });
           return;
         }
+        let dispositivos = await dispositivo.findAll({
+          limit: 1,
+          where: {
+            mac_address: mac.toLowerCase(),
+          },
+        });
 
-        const dispositivo = await mysql.queryOne(
-          `SELECT * FROM dispositivo WHERE mac_address = ? LIMIT 1`,
-          [mac.toLowerCase()]
-        );
-
-        if (dispositivo === null) {
+        if (dispositivos === null) {
           res.send({
             result: false,
             control: {
@@ -59,18 +68,29 @@ module.exports = (expressApp, jsonParser, database) => {
           });
           return;
         }
-        const buscaEmpresa = await mysql.queryOne(
-          `SELECT * FROM empresa WHERE id = ? LIMIT 1`,
-          [dispositivo.empresa_id]
-        );
+        dispositivos = dispositivos[0];
+        const buscaEmpresa = await empresa.findAll({
+          limit: 1,
+          where: {
+            id: dispositivos.empresa_id,
+          },
+        });
+        const mask = /(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/;
+        const cnpjEmpresa = String(buscaEmpresa[0].cnpj);
 
-        let empresa = await mysql.queryOne(
-          `SELECT dados FROM replicacao WHERE empresa_id = ? AND tabela = ?
-                AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dados->"$.CNPJCPF", '.', ''), '-', ''), '/', ''), ' ', ''), '"', '') = ?
-                AND dados IS NOT NULL LIMIT 1`,
-          [dispositivo.empresa_id, 'EMPRESAS', buscaEmpresa.cnpj]
-        );
-        if (empresa == null) {
+        let empresas = await replicacao.findAll({
+          where: {
+            empresa_id: dispositivos.empresa_id,
+            tabela: 'EMPRESAS',
+            dados: {
+              CNPJCPF: {
+                [Op.like]: cnpjEmpresa.replace(mask, '$1%$2%$3%$4%$5'),
+              },
+            },
+          },
+        });
+
+        if (empresas == null) {
           res.send({
             result: false,
             control: { erro: true, mensagem: 'Empresa não enontrada 😥' },
@@ -78,24 +98,42 @@ module.exports = (expressApp, jsonParser, database) => {
           return;
         }
 
-        empresa = JSON.parse(empresa.dados);
+        empresas = JSON.parse(empresas[0].dados);
 
-        let ultimoidpedido = await mysql.queryOne(
-          `SELECT dados->"$.IDPEDIDO" as id FROM replicacao WHERE empresa_id = ? AND tabela = ? ORDER BY dados->"$.IDPEDIDO" DESC`,
-          [dispositivo.empresa_id, 'MOBILE_PEDIDO']
-        );
+        let ultimoidpedido = await replicacao.findAll({
+          limit: 1,
+          attributes: [[Sequelize.json('dados.IDPEDIDO'), 'id']],
+          where: {
+            empresa_id: dispositivos.empresa_id,
+            tabela: 'MOBILE_PEDIDO',
+          },
+          order: [[Sequelize.json('dados.IDPEDIDO'), 'DESC']],
+        });
+
         if (ultimoidpedido === null) {
           ultimoidpedido = { id: 1 };
         }
-        ultimoidpedido = ultimoidpedido.id;
-        let buscaDadosEmpresa = await mysql.queryOne(
-          `SELECT dados->"$.DESCMAX" AS descMax, dados->"$.PRODUTOS" AS padraoProdutos,
-          dados->"$.CLIENTES" AS padraoClientes, dados->"$.VENDEDORES" AS padraoVendedores
-          FROM replicacao WHERE empresa_id = ? AND tabela = ?
-          AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dados->"$.CNPJCPF", '.', ''), '-', ''), '/', ''), ' ', ''), '"', '') = ?
-          ORDER BY DATA_OPERACAO DESC`,
-          [dispositivo.empresa_id, 'EMPRESAS', buscaEmpresa.cnpj]
-        );
+        ultimoidpedido = ultimoidpedido[0].dataValues.id;
+
+        let buscaDadosEmpresa = await replicacao.findAll({
+          attributes: [
+            [Sequelize.json('dados.DESCMAX'), 'padraoVendedores'],
+            [Sequelize.json('dados.PRODUTOS'), 'padraoProdutos'],
+            [Sequelize.json('dados.CLIENTES'), 'padraoClientes'],
+            [Sequelize.json('dados.VENDEDORES'), 'padraoVendedores'],
+          ],
+          where: {
+            empresa_id: dispositivos.empresa_id,
+            tabela: 'EMPRESAS',
+            dados: {
+              CNPJCPF: {
+                [Op.like]: cnpjEmpresa.replace(mask, '$1%$2%$3%$4%$5'),
+              },
+            },
+          },
+          order: [['data_operacao', 'DESC']],
+        });
+
         if (buscaDadosEmpresa === null) {
           buscaDadosEmpresa = {
             descMax: 0,
@@ -103,18 +141,20 @@ module.exports = (expressApp, jsonParser, database) => {
             padraoClientes: 1,
             padraoVendedores: 1,
           };
+        } else {
+          buscaDadosEmpresa = buscaDadosEmpresa[0].dataValues;
         }
         res.send({
-          iddispositivo: dispositivo.id,
-          mac: dispositivo.mac_address,
-          descricao: dispositivo.nome,
+          iddispositivo: dispositivos.id,
+          mac: dispositivos.mac_address,
+          descricao: dispositivos.nome,
           habilitado: true,
           ultimologin: new Date(getUTCTime()).toISOString(),
           status: 'Liberado',
           ultimoidpedido,
           empresa: {
-            idempresa: empresa.IDEMPRESA,
-            cnpj: empresa.CNPJCPF.split(/[^0-9]/).join(''),
+            idempresa: empresas.IDEMPRESA,
+            cnpj: empresas.CNPJCPF.split(/[^0-9]/).join(''),
             padraoclientes: buscaDadosEmpresa.padraoClientes,
             padraovendedores: buscaDadosEmpresa.padraoVendedores,
             padraoprodutos: buscaDadosEmpresa.padraoProdutos,
@@ -184,13 +224,13 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
+      let dispositivos = await dispositivo.findAll({
+        where: {
+          auth: token_dispositivo,
+        },
+      });
 
-      const dispositivo = await mysql.queryOne(
-        `SELECT * FROM dispositivo WHERE auth = ?`,
-        [token_dispositivo]
-      );
-
-      if (dispositivo == null) {
+      if (dispositivos == null) {
         res.send({
           result: false,
           control: {
@@ -200,8 +240,9 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
+      dispositivos = dispositivos[0];
       const mask = /(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})/;
-      const macAddress = String(dispositivo.mac_address);
+      const macAddress = String(dispositivos.mac_address);
       axios
         .patch('http://webservice.windel.com.br/dispositivos-moveis/1', {
           mac: macAddress.replace(mask, '$1:$2:$3:$4:$5:$6'),
@@ -232,13 +273,13 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
+      let dispositivos = await dispositivo.findAll({
+        where: {
+          auth: token_dispositivo,
+        },
+      });
 
-      const dispositivo = await mysql.queryOne(
-        `SELECT * FROM dispositivo WHERE auth = ?`,
-        [token_dispositivo]
-      );
-
-      if (dispositivo == null) {
+      if (dispositivos == null) {
         res.send({
           result: false,
           control: {
@@ -248,136 +289,116 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
+      dispositivos = dispositivos[0];
 
       const lista = req.body;
       const promises = [];
       const mysqlLoop = mysql;
-      for (const key in lista) {
+      Object.keys(lista).forEach((key) => {
         if ({}.hasOwnProperty.call(lista, key)) {
           const cliente = lista[key];
           cliente.statusReplic = 'EM_REPLICACAO';
           promises.push(
-            mysql
-              .queryOne(
-                `SELECT * FROM replicacao
-                    WHERE
-                        empresa_id = ? AND
-                        tabela = ? AND
-                        dados->"$.IDPESSOA" = ? AND
-                        dados->"$.IDEMPRESA" = ? AND
-                        dados->"$.TIPOCADASTRO" = ? AND
-                        dados->"$.HASHREPLIC" = ?
-                `,
-                [
-                  dispositivo.empresa_id,
-                  'MOBILE_CLIENTE',
-                  cliente.idpessoa,
-                  cliente.idempresa,
-                  cliente.tipocadastro,
-                  cliente.hashreplic,
-                ]
-              )
+            replicacao
+              .findAll({
+                where: {
+                  empresa_id: dispositivos.empresa_id,
+                  tabela: 'MOBILE_CLIENTE',
+                  dados: {
+                    IDPESSOA: cliente.idpessoa,
+                    IDEMPRESA: cliente.idempresa,
+                    TIPOCADASTRO: cliente.tipocadastro,
+                    HASHREPLIC: cliente.hashreplic,
+                  },
+                },
+              })
               .then(async (clienteMobile) => {
                 const clienteERP = await prepareItemForERP.mobile_cliente(
                   cliente
                 );
                 if (clienteMobile === null) {
                   const enderecoUUID = UUID.v4();
-                  await mysqlLoop.query(
-                    `INSERT INTO replicacao
-                      (empresa_id, uuid, tabela, data_operacao, situacao, dados, ultimo_autor)
-                      VALUES (?,UUID(),?,?,?,?,?)`,
-                    [
-                      dispositivo.empresa_id,
-                      'MOBILE_CLIENTE',
-                      getUTCTime(),
-                      '0',
-                      JSON.stringify(clienteERP),
-                      dispositivo.auth,
-                    ]
-                  );
+                  await replicacao.create({
+                    empresa_id: dispositivos.empresa_id,
+                    uuid: UUID.v4(),
+                    tabela: 'MOBILE_CLIENTE',
+                    data_operacao: getUTCTime(),
+                    situacao: 0,
+                    dados: JSON.stringify(clienteERP),
+                    ultimo_autor: dispositivos.auth,
+                  });
+                  let cidade = await replicacao.findAll({
+                    where: {
+                      empresa_id: dispositivos.empresa_id,
+                      tabela: 'CIDADES',
+                      dados: {
+                        IDCIDADE: cliente.endereco.cidade.idcidade,
+                      },
+                    },
+                  });
 
-                  let cidade = await mysqlLoop.queryOne(
-                    `SELECT * FROM replicacao WHERE empresa_id = ? AND tabela = ? AND dados->"$.IDCIDADE" = ?`,
-                    [
-                      dispositivo.empresa_id,
-                      'CIDADES',
-                      cliente.endereco.cidade.idcidade,
-                    ]
-                  );
-
-                  if (cidade && cidade.dados) {
-                    cidade = JSON.parse(cidade.dados);
+                  if (cidade && cidade[0].dados) {
+                    cidade = JSON.parse(cidade[0].dados);
                   } else {
                     cidade = { COD_NACIONAL: null };
                   }
 
-                  await mysqlLoop.query(
-                    `INSERT INTO replicacao
-                          (empresa_id, uuid, tabela, data_operacao, situacao, dados, ultimo_autor)
-                      VALUES (?,?,?,?,?,?,?)`,
-                    [
-                      dispositivo.empresa_id,
-                      enderecoUUID,
-                      'MOBILE_CLIENTE_ENDERECO',
-                      getUTCTime(),
-                      '0',
-                      JSON.stringify({
-                        IDPESSOA: clienteERP.IDPESSOA,
-                        IDEMPRESA: clienteERP.IDEMPRESA,
-                        TIPOCADASTRO: clienteERP.TIPOCADASTRO,
-                        HASHREPLIC: clienteERP.HASHREPLIC,
-                        CEP: cliente.endereco.cep,
-                        LOGRADOURO: cliente.endereco.logradouro,
-                        NUMERO: cliente.endereco.numero,
-                        COMPLEMENTO: cliente.endereco.complemento,
-                        BAIRRO: cliente.endereco.bairro,
-                        IDCIDADE: cidade.COD_NACIONAL,
-                        SINC_UUID: enderecoUUID,
-                      }),
-                      dispositivo.auth,
-                    ]
-                  );
+                  await replicacao.create({
+                    empresa_id: dispositivos.empresa_id,
+                    uuid: enderecoUUID,
+                    tabela: 'MOBILE_CLIENTE_ENDERECO',
+                    data_operacao: getUTCTime(),
+                    situacao: 0,
+                    dados: JSON.stringify({
+                      IDPESSOA: clienteERP.IDPESSOA,
+                      IDEMPRESA: clienteERP.IDEMPRESA,
+                      TIPOCADASTRO: clienteERP.TIPOCADASTRO,
+                      HASHREPLIC: clienteERP.HASHREPLIC,
+                      CEP: cliente.endereco.cep,
+                      LOGRADOURO: cliente.endereco.logradouro,
+                      NUMERO: cliente.endereco.numero,
+                      COMPLEMENTO: cliente.endereco.complemento,
+                      BAIRRO: cliente.endereco.bairro,
+                      IDCIDADE: cidade.COD_NACIONAL,
+                      SINC_UUID: enderecoUUID,
+                    }),
+                    ultimo_autor: dispositivos.auth,
+                  });
                 } else {
-                  clienteMobile.dados = clienteERP;
-                  await mysqlLoop.query(
-                    'UPDATE replicacao SET dados = ?, data_operacao = ?, ultimo_autor = ? WHERE uuid = ? AND tabela = ? AND empresa_id = ?',
-                    [
-                      JSON.stringify(clienteMobile.dados),
-                      getUTCTime(),
-                      dispositivo.auth,
-                      clienteMobile.uuid,
-                      'MOBILE_CLIENTE',
-                      dispositivo.empresa_id,
-                    ]
+                  clienteMobile[0].dados = clienteERP;
+                  await replicacao.update(
+                    {
+                      dados: JSON.stringify(clienteMobile[0].dados),
+                      data_operacao: getUTCTime(),
+                      ultimo_autor: dispositivos.auth,
+                    },
+                    {
+                      where: {
+                        uuid: clienteMobile[0].uuid,
+                        tabela: 'MOBILE_CLIENTE',
+                        empresa_id: dispositivos.empresa_id,
+                      },
+                    }
                   );
+                  let clienteMobileEndereco = await replicacao.findAll({
+                    where: {
+                      empresa_id: dispositivos.empresa_id,
+                      tabela: 'CLIENTE_MOBILE_ENDERECO',
+                      dados: {
+                        IDPESSOA: cliente.idpessoa,
+                        IDEMPRESA: cliente.idempresa,
+                        TIPOCADASTRO: cliente.tipocadastro,
+                        HASHREPLIC: cliente.hashreplic,
+                      },
+                    },
+                  });
 
-                  const clienteMobileEndereco = await mysqlLoop.queryOne(
-                    `SELECT * FROM replicacao
-                          WHERE
-                              empresa_id = ? AND
-                              tabela = ? AND
-                              dados->"$.IDPESSOA" = ? AND
-                              dados->"$.IDEMPRESA" = ? AND
-                              dados->"$.TIPOCADASTRO" = ? AND
-                              dados->"$.HASHREPLIC" = ?
-                `,
-                    [
-                      dispositivo.empresa_id,
-                      'MOBILE_CLIENTE_ENDERECO',
-                      cliente.idpessoa,
-                      cliente.idempresa,
-                      cliente.tipocadastro,
-                      cliente.hashreplic,
-                    ]
-                  );
+                  clienteMobileEndereco = clienteMobileEndereco[0];
 
                   const enderecoUUID = clienteMobileEndereco.uuid;
-
-                  await mysqlLoop.query(
-                    `UPDATE replicacao SET dados = ?, data_operacao = ?, ultimo_autor = ? WHERE uuid = ? AND tabela = ? AND empresa_id = ?`,
-                    [
-                      JSON.stringify({
+                  await replicacao.update(
+                    {
+                      dados: JSON.stringify({
                         IDPESSOA: clienteERP.IDPESSOA,
                         IDEMPRESA: clienteERP.IDEMPRESA,
                         TIPOCADASTRO: clienteERP.TIPOCADASTRO,
@@ -390,12 +411,16 @@ module.exports = (expressApp, jsonParser, database) => {
                         IDCIDADE: cliente.endereco.IDCIDADE,
                         SINC_UUID: enderecoUUID,
                       }),
-                      getUTCTime(),
-                      dispositivo.auth,
-                      enderecoUUID,
-                      'MOBILE_CLIENTE_ENDERECO',
-                      dispositivo.empresa_id,
-                    ]
+                      data_operacao: getUTCTime(),
+                      ultimo_autor: dispositivos.auth,
+                    },
+                    {
+                      where: {
+                        uuid: enderecoUUID,
+                        tabela: 'MOBILE_CLIENTE_ENDERECO',
+                        empresa_id: dispositivos.empresa_id,
+                      },
+                    }
                   );
                 }
 
@@ -403,7 +428,7 @@ module.exports = (expressApp, jsonParser, database) => {
               })
           );
         }
-      }
+      });
       await Promise.all(promises);
       res.send(lista);
     }
@@ -425,13 +450,13 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
+      let dispositivos = await dispositivo.findAll({
+        where: {
+          auth: token_dispositivo,
+        },
+      });
 
-      const dispositivo = await mysql.queryOne(
-        `SELECT * FROM dispositivo WHERE auth = ?`,
-        [token_dispositivo]
-      );
-
-      if (dispositivo == null) {
+      if (dispositivos == null) {
         res.send({
           result: false,
           control: {
@@ -441,19 +466,24 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
+      dispositivos = dispositivos[0];
 
-      const results = await mysql.query(
-        `SELECT * FROM replicacao WHERE empresa_id = ? AND tabela = ? AND dados->"$.statusReplic" = ?`,
-        [dispositivo.empresa_id, 'MOBILE_CLIENTE', 'EM_REPLICACAO']
-      );
+      const results = await replicacao.findAll({
+        where: {
+          empresa_id: dispositivos.empresa_id,
+          tabela: 'MOBILE_CLIENTE',
+          dados: {
+            statusReplic: 'EM_REPLICACAO',
+          },
+        },
+      });
 
       const clientes = [];
-
-      for (const key in results) {
+      Object.keys(results).forEach((key) => {
         if ({}.hasOwnProperty.call(results, key)) {
           clientes.push(JSON.parse(results[key].dados));
         }
-      }
+      });
 
       res.send({
         result: clientes,
