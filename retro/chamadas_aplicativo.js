@@ -4,8 +4,6 @@ const UUID = require('uuid');
 const Sequelize = require('sequelize');
 const { Op } = require('sequelize');
 
-let mysql = null;
-
 const prepareItemForMobile = require('./prepareItemForMobile');
 const prepareItemForERP = require('./prepareItemForERP');
 const {
@@ -30,9 +28,7 @@ function getUTCTime(now) {
   );
 }
 
-module.exports = (expressApp, jsonParser, database) => {
-  mysql = database;
-
+module.exports = (expressApp, jsonParser) => {
   // /rest/replicacao/dispositivo/info?mac=%s
   expressApp.get(
     '/rest/replicacao/dispositivo/info',
@@ -51,7 +47,7 @@ module.exports = (expressApp, jsonParser, database) => {
           });
           return;
         }
-        let dispositivos = await dispositivo.findAll({
+        const dispositivos = await dispositivo.findOne({
           limit: 1,
           where: {
             mac_address: mac.toLowerCase(),
@@ -68,7 +64,6 @@ module.exports = (expressApp, jsonParser, database) => {
           });
           return;
         }
-        dispositivos = dispositivos[0];
         const buscaEmpresa = await empresa.findAll({
           limit: 1,
           where: {
@@ -224,7 +219,7 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
-      let dispositivos = await dispositivo.findAll({
+      const dispositivos = await dispositivo.findOne({
         where: {
           auth: token_dispositivo,
         },
@@ -240,7 +235,6 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
-      dispositivos = dispositivos[0];
       const mask = /(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})/;
       const macAddress = String(dispositivos.mac_address);
       axios
@@ -273,7 +267,7 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
-      let dispositivos = await dispositivo.findAll({
+      const dispositivos = await dispositivo.findOne({
         where: {
           auth: token_dispositivo,
         },
@@ -289,11 +283,9 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
-      dispositivos = dispositivos[0];
 
       const lista = req.body;
       const promises = [];
-      const mysqlLoop = mysql;
       Object.keys(lista).forEach((key) => {
         if ({}.hasOwnProperty.call(lista, key)) {
           const cliente = lista[key];
@@ -450,7 +442,7 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
-      let dispositivos = await dispositivo.findAll({
+      const dispositivos = await dispositivo.findOne({
         where: {
           auth: token_dispositivo,
         },
@@ -466,7 +458,6 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
-      dispositivos = dispositivos[0];
 
       const results = await replicacao.findAll({
         where: {
@@ -499,7 +490,6 @@ module.exports = (expressApp, jsonParser, database) => {
     '/rest/replicacao/cliente/buscarstatusclientesreplic',
     jsonParser,
     async (req, res) => {
-      const mysqlLoop = mysql;
       const token_dispositivo = req.headers.authtoken;
 
       if (!token_dispositivo) {
@@ -513,10 +503,11 @@ module.exports = (expressApp, jsonParser, database) => {
         return;
       }
 
-      const dispositivo = await mysql.queryOne(
-        `SELECT * FROM dispositivo WHERE auth = ?`,
-        [token_dispositivo]
-      );
+      const dispositivos = await dispositivo.findOne({
+        where: {
+          auth: token_dispositivo,
+        },
+      });
 
       if (dispositivo == null) {
         res.send({
@@ -528,38 +519,35 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
-
       const lista = req.body;
 
       const retorno = [];
       const promises = [];
-      for (const key in lista) {
+
+      Object.keys(lista).forEach((key) => {
         if ({}.hasOwnProperty.call(lista, key)) {
           promises.push(
-            mysql
-              .queryOne(
-                `SELECT * FROM replicacao WHERE empresa_id = ? AND tabela = ? AND dados->"$.HASHREPLIC" = ?`,
-                [
-                  dispositivo.empresa_id,
-                  'MOBILE_CLIENTE',
-                  lista[key].hashreplic,
-                ]
-              )
+            replicacao
+              .findOne({
+                where: {
+                  empresa_id: dispositivos.empresa_id,
+                  tabela: 'MOBILE_CLIENTE',
+                  dados: {
+                    HASHREPLIC: lista[key].hashreplic,
+                  },
+                },
+              })
               .then(async (result) => {
                 if (result !== null) {
                   const dados = JSON.parse(result.dados);
                   retorno.push(
-                    await prepareItemForMobile.cliente(
-                      dados,
-                      mysqlLoop,
-                      dispositivo
-                    )
+                    await prepareItemForMobile.cliente(dados, dispositivos)
                   );
                 }
               })
           );
         }
-      }
+      });
       await Promise.all(promises);
       res.send(retorno);
     }
@@ -582,13 +570,11 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
+      const dispositivos = dispositivo.findOne({
+        where: { auth: token_dispositivo },
+      });
 
-      const dispositivo = await mysql.queryOne(
-        `SELECT * FROM dispositivo WHERE auth = ?`,
-        [token_dispositivo]
-      );
-
-      if (dispositivo == null) {
+      if (dispositivos == null) {
         res.send({
           result: false,
           control: {
@@ -600,9 +586,8 @@ module.exports = (expressApp, jsonParser, database) => {
       }
       const lista = req.body;
       const promises = [];
-      const mySQLLoop = mysql;
 
-      for (const key in lista) {
+      Object.keys(lista).forEach((key) => {
         if ({}.hasOwnProperty.call(lista, key)) {
           const pedido = lista[key];
 
@@ -614,54 +599,38 @@ module.exports = (expressApp, jsonParser, database) => {
               const produtosERP = await prepareItemForERP.mobile_pedido_produtos(
                 pedido
               );
+              await replicacao.create({
+                empresa_id: dispositivos.empresa_id,
+                uuid: UUID.v4(),
+                data_operacao: getUTCTime(),
+                situacao: 0,
+                dados: JSON.stringify(pedidoERP),
+                ultimo_autor: dispositivos.auth,
+              });
 
-              await mySQLLoop.query(
-                `INSERT INTO replicacao
-                  (empresa_id, uuid, tabela, data_operacao, situacao, dados, ultimo_autor)
-                 VALUES
-                  (?, UUID(), ?, ?, ?, ?, ?)`,
-                [
-                  dispositivo.empresa_id,
-                  'MOBILE_PEDIDO',
-                  getUTCTime(),
-                  '0',
-                  JSON.stringify(pedidoERP),
-                  dispositivo.auth,
-                ]
-              );
-
-              await mySQLLoop.execute(
-                `DELETE FROM replicacao
-                  WHERE empresa_id = ?
-                    AND tabela = ?
-                    AND dados->"$.IDPEDIDO" = ?
-                    AND dados->"$.MACPEDIDO" = ?
-                `,
-                [
-                  dispositivo.empresa_id,
-                  'MOBILE_PEDIDO_PRODUTOS',
-                  pedidoERP.IDPEDIDO,
-                  pedidoERP.MAC,
-                ]
-              );
+              await replicacao.delete({
+                where: {
+                  empresa_id: dispositivos.empresa_id,
+                  tabela: 'MOBILE_PEDIDO_PRODUTOS',
+                  dados: {
+                    IDPEDIDO: pedidoERP.IDPEDIDO,
+                    MACPEDIDO: pedidoERP.MAC,
+                  },
+                },
+              });
 
               const promisesLoop = [];
               for (let i = 0; i < produtosERP.length; i += 1) {
                 promisesLoop.push(
-                  mySQLLoop.query(
-                    `INSERT INTO replicacao
-                      (empresa_id, uuid, tabela, data_operacao, situacao, dados, ultimo_autor)
-                     VALUES
-                      (?, UUID(), ?, ?, ?, ?, ?)`,
-                    [
-                      dispositivo.empresa_id,
-                      'MOBILE_PEDIDO_PRODUTOS',
-                      getUTCTime(),
-                      '0',
-                      JSON.stringify(produtosERP[i]),
-                      dispositivo.auth,
-                    ]
-                  )
+                  replicacao.create({
+                    empresa_id: dispositivos.empresa_id,
+                    uuid: UUID.v4(),
+                    tabela: 'MOBILE_PEDIDO_PRODUTOS',
+                    data_operacao: getUTCTime(),
+                    situacao: 0,
+                    dados: JSON.stringify(produtosERP[i]),
+                    ultimo_autor: dispositivos.auth,
+                  })
                 );
               }
               await Promise.all(promisesLoop);
@@ -669,7 +638,7 @@ module.exports = (expressApp, jsonParser, database) => {
             })
           );
         }
-      }
+      });
       await Promise.all(promises);
       res.send(lista);
     }
@@ -693,13 +662,11 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
+      const dispositivos = dispositivo.findOne({
+        where: { auth: token_dispositivo },
+      });
 
-      const dispositivo = await mysql.queryOne(
-        `SELECT * FROM dispositivo WHERE auth = ?`,
-        [token_dispositivo]
-      );
-
-      if (dispositivo == null) {
+      if (dispositivos == null) {
         res.send({
           result: false,
           control: {
@@ -714,37 +681,30 @@ module.exports = (expressApp, jsonParser, database) => {
       const listaRetorno = [];
 
       const promises = [];
-      const mySQLLoop = mysql;
-      for (const key in lista) {
+      Object.keys(lista).forEach((key) => {
         if ({}.hasOwnProperty.call(lista, key)) {
           let pedido = lista[key];
 
           promises.push(
-            mysql
-              .queryOne(
-                `SELECT * FROM replicacao
-                    WHERE
-                        empresa_id = ? AND
-                        tabela = ? AND
-                        dados->"$.IDPEDIDO" = ? AND
-                        dados->"$.IDEMPRESA" = ? AND
-                        dados->"$.MAC" = ? `,
-                [
-                  dispositivo.empresa_id,
-                  'MOBILE_PEDIDO',
-                  pedido.idpedido,
-                  pedido.idempresa,
-                  pedido.mac,
-                ]
-              )
+            replicacao
+              .findOne({
+                where: {
+                  empresa_id: dispositivos.empresa_id,
+                  tabela: 'MOBILE_PEDIDO',
+                  dados: {
+                    IDPEDIDO: pedido.idpedido,
+                    IDEMPRESA: pedido.idempresa,
+                    MAC: pedido.mac,
+                  },
+                },
+              })
               .then(async (dataPedido) => {
                 if (dataPedido !== null) {
                   dataPedido.dados = JSON.parse(dataPedido.dados);
 
                   pedido = await prepareItemForMobile.pedido(
                     dataPedido.dados,
-                    mySQLLoop,
-                    dispositivo
+                    dispositivos
                   );
 
                   pedido.statusreplic = dataPedido.dados.STATUSPEDIDO;
@@ -755,7 +715,7 @@ module.exports = (expressApp, jsonParser, database) => {
               })
           );
         }
-      }
+      });
       await Promise.all(promises);
       res.send(listaRetorno);
     }
@@ -778,12 +738,11 @@ module.exports = (expressApp, jsonParser, database) => {
         return;
       }
 
-      const dispositivo = await mysql.queryOne(
-        `SELECT * FROM dispositivo WHERE auth = ?`,
-        [token_dispositivo]
-      );
+      const dispositivos = dispositivo.findOne({
+        where: { auth: token_dispositivo },
+      });
 
-      if (dispositivo == null) {
+      if (dispositivos == null) {
         res.send({
           result: false,
           control: {
@@ -793,13 +752,14 @@ module.exports = (expressApp, jsonParser, database) => {
         });
         return;
       }
+      const result = await replicacao.count({
+        where: {
+          empresa_id: dispositivos.empresa_id,
+          tabela: 'CIDADES',
+        },
+      });
 
-      const result = await mysql.queryOne(
-        'SELECT count(*) as total FROM replicacao WHERE empresa_id = ? AND tabela = ?',
-        [dispositivo.empresa_id, 'CIDADES']
-      );
-
-      res.send(`${result.total}`);
+      res.send(`${result}`);
     }
   );
 
@@ -820,12 +780,11 @@ module.exports = (expressApp, jsonParser, database) => {
         return;
       }
 
-      const dispositivo = await mysql.queryOne(
-        `SELECT * FROM dispositivo WHERE auth = ?`,
-        [token_dispositivo]
-      );
+      const dispositivos = dispositivo.findOne({
+        where: { auth: token_dispositivo },
+      });
 
-      if (dispositivo == null) {
+      if (dispositivos == null) {
         res.send({
           result: false,
           control: {
@@ -838,10 +797,17 @@ module.exports = (expressApp, jsonParser, database) => {
 
       const nomeCidade = req.params.cidade;
 
-      const result = await mysql.query(
-        `SELECT * FROM replicacao WHERE empresa_id = ? AND tabela = ? AND dados->"$.DESCRICAO" LIKE ?`,
-        [dispositivo.empresa_id, 'CIDADES', `${nomeCidade}%`]
-      );
+      const result = replicacao.findAll({
+        where: {
+          empresa_id: dispositivos.empresa_id,
+          tabela: 'CIDADES',
+          dados: {
+            DESCRICAO: {
+              [Op.like]: `${nomeCidade}%`,
+            },
+          },
+        },
+      });
 
       const cidades = [];
       for (let i = 0; i < result.length; i += 1) {
@@ -865,12 +831,11 @@ module.exports = (expressApp, jsonParser, database) => {
       return;
     }
 
-    const dispositivo = await mysql.queryOne(
-      `SELECT * FROM dispositivo WHERE auth = ?`,
-      [token_dispositivo]
-    );
+    const dispositivos = dispositivo.findOne({
+      where: { auth: token_dispositivo },
+    });
 
-    if (dispositivo == null) {
+    if (dispositivos == null) {
       res.send({
         result: false,
         control: {
@@ -880,11 +845,12 @@ module.exports = (expressApp, jsonParser, database) => {
       });
       return;
     }
-
-    const result = await mysql.query(
-      `SELECT * FROM replicacao WHERE empresa_id = ? AND tabela = ?`,
-      [dispositivo.empresa_id, 'CIDADES']
-    );
+    const result = replicacao.findAll({
+      where: {
+        empresa_id: dispositivos.empresa_id,
+        tabela: 'CIDADES',
+      },
+    });
 
     const cidades = [];
     const promises = [];
@@ -925,12 +891,11 @@ module.exports = (expressApp, jsonParser, database) => {
         return;
       }
 
-      const dispositivo = await mysql.queryOne(
-        `SELECT * FROM dispositivo WHERE auth = ?`,
-        [token_dispositivo]
-      );
+      const dispositivos = dispositivo.findOne({
+        where: { auth: token_dispositivo },
+      });
 
-      if (dispositivo == null) {
+      if (dispositivos == null) {
         res.send({
           result: false,
           control: {
@@ -944,75 +909,89 @@ module.exports = (expressApp, jsonParser, database) => {
       const { tabela } = req.query;
       const { data } = req.query;
 
-      const columns = ['*'];
-      const joins = [];
-      const conditions = ['empresa_id = ?', 'tabela = ?'];
-      const conditionsParams = [dispositivo.empresa_id];
-
+      let tabelaConsulta = '';
+      let extraConditions = {};
       switch (tabela) {
         case 'vendedor':
-          conditionsParams.push('PESSOAS');
-          conditions.push(`dados->"$.IDTIPO_PS" = ?`);
-          conditionsParams.push(5);
+          tabelaConsulta = 'PESSOAS';
+          extraConditions = {
+            dados: {
+              IDTIPO_PS: 5,
+            },
+          };
           break;
         case 'cliente':
-          conditionsParams.push('PESSOAS');
-          conditions.push(`dados->"$.IDTIPO_PS" = ?`);
-          conditionsParams.push(1);
+          tabelaConsulta = 'PESSOAS';
+          extraConditions = {
+            dados: {
+              IDTIPO_PS: 1,
+            },
+          };
           break;
         case 'formapgto':
-          conditionsParams.push('FORMAPGTO');
+          tabelaConsulta = 'FORMAPGTO';
           break;
         case 'condicaopgto':
-          conditionsParams.push('CONDPAG');
+          tabelaConsulta = 'CONDPAG';
           break;
         case 'pedido':
-          conditionsParams.push('MOBILE_PEDIDO');
+          tabelaConsulta = 'MOBILE_PEDIDO';
           break;
         case 'produto':
-          conditionsParams.push('PRODUTOS');
+          tabelaConsulta = 'PRODUTOS';
           break;
         case 'parametro':
-          conditionsParams.push('PARAMETROS');
+          tabelaConsulta = 'PARAMETROS';
           break;
         default:
-          conditionsParams.push(tabela.toUpperCase());
+          tabelaConsulta = tabela.toUpperCase();
           break;
       }
 
-      conditions.push(`data_operacao > ?`);
-      conditionsParams.push(data);
-      conditions.push(`(situacao = 2
-                        or (not dados is null
-                        and not dados like 'null'
-                        and not dados like '%[]%'))`);
-      const linhasBanco = await mysql.query(
-        `SELECT ${columns}
-            FROM replicacao
-            ${joins.join(', ')}
-        WHERE ${conditions.join(' AND ')}
-        ORDER BY data_operacao ASC, id ASC
-        LIMIT 50`,
-        conditionsParams
-      );
+      const linhasBanco = await replicacao.findAll({
+        limit: 100,
+        where: {
+          empresa_id: dispositivos.empresa_id,
+          tabela: tabelaConsulta,
+          data_operacao: {
+            [Op.gt]: data,
+          },
+          [Op.or]: {
+            situacao: 2,
+            dados: {
+              [Op.not]: null,
+              [Op.not]: {
+                [Op.like]: 'null',
+              },
+              [Op.not]: {
+                [Op.like]: '%[]%',
+              },
+            },
+          },
+          ...extraConditions,
+        },
+      });
+
       const promises = [];
       const objetos = [];
-      for (const key in linhasBanco) {
+
+      Object.keys(linhasBanco).forEach((key) => {
         if ({}.hasOwnProperty.call(linhasBanco, key)) {
           const dados = JSON.parse(linhasBanco[key].dados);
           const newDados = {};
-          for (const dadoKey in dados) {
+
+          Object.keys(dados).forEach((dadoKey) => {
             if ({}.hasOwnProperty.call(dados, dadoKey)) {
               newDados[dadoKey.toLowerCase()] = dados[dadoKey];
             }
-          }
+          });
           const objeto = {};
           objeto.operacao = `${linhasBanco[key].situacao}`;
           objeto.data = linhasBanco[key].data_operacao;
 
           if (tabela in prepareItemForMobile) {
             promises.push(
-              prepareItemForMobile[tabela](newDados, mysql, dispositivo).then(
+              prepareItemForMobile[tabela](newDados, dispositivo).then(
                 (results) => {
                   objeto.registro = results;
                 }
@@ -1021,7 +1000,7 @@ module.exports = (expressApp, jsonParser, database) => {
           } else {
             promises.push(
               prepareItemForMobile
-                .prepareDefault(newDados, mysql, dispositivo)
+                .prepareDefault(newDados, dispositivo)
                 .then((results) => {
                   objeto.registro = results;
                 })
@@ -1029,7 +1008,7 @@ module.exports = (expressApp, jsonParser, database) => {
           }
           objetos.push(objeto);
         }
-      }
+      });
       await Promise.all(promises);
       res.send({
         result: objetos,

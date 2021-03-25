@@ -14,16 +14,6 @@ const fs = require('fs');
 
 app.use(express.static('public'));
 
-const databaseReplicacao = require('./common/mysql')(
-  process.env.MYSQL_HOST,
-  process.env.MYSQL_PORT,
-  process.env.MYSQL_USER,
-  process.env.MYSQL_PASS,
-  process.env.MYSQL_BASE
-);
-
-const checkVersion = require('./util/checkVersion.js');
-
 const {
   empresa,
   dispositivo,
@@ -507,8 +497,7 @@ app.get('/id-watcher/:auth/:tabela', jsonParser, async (req, res) => {
   });
 });
 
-// RETRO COMPATIBILIDADE COM O APLICATIVO escrito no Android Studio
-require('./retro/chamadas_aplicativo.js')(app, jsonParser, databaseReplicacao);
+require('./retro/chamadas_aplicativo.js')(app, jsonParser);
 
 app.all('*', jsonParser, (req, res) => {
   res.send('Rota invalida');
@@ -518,13 +507,6 @@ process.on('uncaughtException', (err) => {
   console.error(`Uncaught Exception: ${err.message} ${err.stack}`);
 });
 
-/*
-setTimeout(() => {
-  process.exit(1);
-}, 600000);
-*/
-
 app.listen(3000, async () => {
-  await checkVersion(databaseReplicacao);
   console.info('Servidor Node escutando em 3000!');
 });

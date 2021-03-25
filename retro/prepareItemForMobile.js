@@ -18,7 +18,7 @@ function lowerCaseAllKey(data) {
 
   return newData;
 }
-async function prepareCondicaopgto(newDados, mysql, dispositivos) {
+async function prepareCondicaopgto(newDados, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
   newDados.idcondicaopagamento = newDados.idcondpag;
   newDados.percacrescimo = !newDados.acrescimos ? '0' : newDados.acrescimos;
@@ -30,7 +30,7 @@ async function prepareCondicaopgto(newDados, mysql, dispositivos) {
   return newDados;
 }
 
-async function prepareFormapgto(newDados, mysql, dispositivos) {
+async function prepareFormapgto(newDados, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
   newDados.idformapagamento = newDados.idformapgto;
   switch (newDados.tipo) {
@@ -71,7 +71,7 @@ async function prepareCidade(objeto) {
   return objeto;
 }
 
-async function prepareDefault(objeto, mysql, dispositivos) {
+async function prepareDefault(objeto, dispositivos) {
   objeto = lowerCaseAllKey(objeto);
   return objeto;
 }
@@ -84,7 +84,7 @@ function clearNull(newDados) {
   }
   return newDados;
 }
-async function preparePessoa(newDados, mysql, dispositivos) {
+async function preparePessoa(newDados, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
   const buscaEmpresa = await empresa.findAll({
     where: {
@@ -109,15 +109,6 @@ async function preparePessoa(newDados, mysql, dispositivos) {
       },
     },
   });
-  /* let buscaDadosEmpresa = await mysql.queryOne(
-    `SELECT dados->"$.VENDEDORES" AS padraoVendedores, dados->"$.CLIENTES" AS padraoClientes,
-      dados->"$.PRODUTOS" AS padraoProdutos
-    FROM replicacao WHERE empresa_id = ? AND tabela = ?
-    AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dados->"$.CNPJCPF", '.', ''), '-', ''), '/', ''), ' ', ''), '"', '') = ?
-    ORDER BY DATA_OPERACAO DESC
-    LIMIT 1`,
-    [dispositivo.empresa_id, 'EMPRESAS', ]
-  ); */
 
   if (buscaDadosEmpresa === null) {
     buscaDadosEmpresa = {
@@ -250,7 +241,7 @@ async function preparePessoa(newDados, mysql, dispositivos) {
   return newDados;
 }
 
-async function preparePedido(newDados, mysql, dispositivos) {
+async function preparePedido(newDados, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
 
   const buscaEmpresa = await empresa.findAll({
@@ -304,7 +295,7 @@ async function preparePedido(newDados, mysql, dispositivos) {
   });
   if (pessoa !== null) {
     pessoa = JSON.parse(pessoa[0].dados);
-    pessoa = await preparePessoa(pessoa, mysql, dispositivos);
+    pessoa = await preparePessoa(pessoa, dispositivos);
   }
   newDados.cliente = pessoa;
   let condipgto = await replicacao.findAll({
@@ -318,7 +309,7 @@ async function preparePedido(newDados, mysql, dispositivos) {
   });
   if (condipgto !== null) {
     condipgto = JSON.parse(condipgto[0].dados);
-    condipgto = await prepareCondicaopgto(condipgto, mysql, dispositivos);
+    condipgto = await prepareCondicaopgto(condipgto, dispositivos);
   }
   newDados.condicaopgto = condipgto;
 
@@ -334,7 +325,7 @@ async function preparePedido(newDados, mysql, dispositivos) {
 
   if (formapgto !== null) {
     formapgto = JSON.parse(formapgto[0].dados);
-    formapgto = await prepareFormapgto(formapgto, mysql, dispositivos);
+    formapgto = await prepareFormapgto(formapgto, dispositivos);
   }
   newDados.formapgto = formapgto;
   let vendedor = await replicacao.findAll({
@@ -352,7 +343,7 @@ async function preparePedido(newDados, mysql, dispositivos) {
 
   if (vendedor !== null) {
     vendedor = JSON.parse(vendedor[0].dados);
-    vendedor = await preparePessoa(vendedor, mysql, dispositivos);
+    vendedor = await preparePessoa(vendedor, dispositivos);
   }
   newDados.vendedor = vendedor;
 
@@ -424,7 +415,7 @@ async function preparePedido(newDados, mysql, dispositivos) {
   return newDados;
 }
 
-async function prepareProduto(newDados, mysql, dispositivos) {
+async function prepareProduto(newDados, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
 
   newDados.unidademedida = newDados.un;

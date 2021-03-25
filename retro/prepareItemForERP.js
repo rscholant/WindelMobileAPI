@@ -1,11 +1,10 @@
-/* eslint-disable no-restricted-syntax */
 function upperCaseAllKey(data) {
   const newData = {};
-  for (const key in data) {
+  Object.keys(data).forEach((key) => {
     if ({}.hasOwnProperty.call(data, key)) {
       newData[key.toUpperCase()] = data[key];
     }
-  }
+  });
 
   return newData;
 }
@@ -72,9 +71,9 @@ async function prepareMobileCliente(newDados) {
   ];
 
   const filteredDados = {};
-  for (const coluna of colunas) {
+  Object.keys(colunas).forEach((coluna) => {
     filteredDados[coluna] = newDados[coluna];
-  }
+  });
 
   if (typeof filteredDados.SEXO === 'string') {
     filteredDados.SEXO = convertClienteSexoToSexoERP(filteredDados.SEXO);
