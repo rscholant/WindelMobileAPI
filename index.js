@@ -232,6 +232,17 @@ app.post('/modifications', jsonParser, async (req, res) => {
           `CASE TABELA WHEN 'MOBILE_CLIENTE' THEN '0' WHEN 'MOBILE_CLIENTE_ENDERECO' THEN '1' WHEN 'MOBILE_PEDIDO' THEN '2' WHEN 'MOBILE_PEDIDO_PRODUTOS' THEN '3' ELSE '5' END, data_operacao`
         ),
       });
+      const count = await replicacao.count({
+        where: {
+          empresa_id: dispositivos.empresa_id,
+          data_operacao: {
+            [Op.gt]: req.body.since,
+          },
+          ultimo_autor: {
+            [Op.ne]: authToken,
+          },
+        },
+      });
       result.data = data;
       result.result = true;
       if (data.length > 0) {
@@ -242,6 +253,7 @@ app.post('/modifications', jsonParser, async (req, res) => {
       for (let i = 0; i < result.data.length; i += 1) {
         result.data[i].dados = JSON.stringify(result.data[i].dados);
       }
+      result.remaining = count < 200 ? 0 : count - 200;
     } else if (req.body.action === 'new') {
       const valuesMarkers = [];
       const params = [];
