@@ -1,10 +1,10 @@
 {
   "development": {
-    "username": "root",
-    "password": "s2crm49y!",
+    "username": "apiuserws",
+    "password": "Api21Mobile20!",
     "database": "sinc_replicacao",
-    "host": "127.0.0.1",
-    "port": "3307",
+    "host": "localhost",
+    "port": "3306",
     "dialect": "mariadb",
     "define": {
       "freezeTableName": true
