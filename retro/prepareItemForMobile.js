@@ -18,7 +18,7 @@ function lowerCaseAllKey(data) {
 
   return newData;
 }
-async function prepareCondicaopgto(newDados, dispositivos) {
+async function prepareCondicaopgto(newDados, _dispositivos) {
   newDados = lowerCaseAllKey(newDados);
   newDados.idcondicaopagamento = newDados.idcondpag;
   newDados.percacrescimo = !newDados.acrescimos ? '0' : newDados.acrescimos;
@@ -30,7 +30,7 @@ async function prepareCondicaopgto(newDados, dispositivos) {
   return newDados;
 }
 
-async function prepareFormapgto(newDados, dispositivos) {
+async function prepareFormapgto(newDados, _dispositivos) {
   newDados = lowerCaseAllKey(newDados);
   newDados.idformapagamento = newDados.idformapgto;
   switch (newDados.tipo) {
@@ -71,7 +71,7 @@ async function prepareCidade(objeto) {
   return objeto;
 }
 
-async function prepareDefault(objeto, dispositivos) {
+async function prepareDefault(objeto, _dispositivos) {
   objeto = lowerCaseAllKey(objeto);
   return objeto;
 }
@@ -86,16 +86,16 @@ function clearNull(newDados) {
 }
 async function preparePessoa(newDados, dispositivos) {
   newDados = lowerCaseAllKey(newDados);
-  const buscaEmpresa = await empresa.findAll({
+  const buscaEmpresa = await empresa.findOne({
     where: {
       id: dispositivos.empresa_id,
     },
   });
 
   const mask = /(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/;
-  const cnpjEmpresa = String(buscaEmpresa[0].cnpj);
+  const cnpjEmpresa = String(buscaEmpresa.cnpj);
 
-  let buscaDadosEmpresa = await replicacao.findAll({
+  let buscaDadosEmpresa = await replicacao.findOne({
     attributes: [
       [Sequelize.json('dados.VENDEDORES'), 'padraoVendedores'],
       [Sequelize.json('dados.CLIENTES'), 'padraoClientes'],
@@ -108,6 +108,7 @@ async function preparePessoa(newDados, dispositivos) {
         CNPJCPF: { [Op.like]: cnpjEmpresa.replace(mask, '$1%$2%$3%$4%$5') },
       },
     },
+    order: [['data_operacao', 'DESC']],
   });
 
   if (buscaDadosEmpresa === null) {
@@ -117,9 +118,9 @@ async function preparePessoa(newDados, dispositivos) {
       padraoProdutos: newDados.idempresa,
     };
   } else {
-    buscaDadosEmpresa = buscaDadosEmpresa[0].dataValues;
+    buscaDadosEmpresa = buscaDadosEmpresa.dataValues;
   }
-  let cidadeResult = await replicacao.findAll({
+  let cidadeResult = await replicacao.findOne({
     where: {
       empresa_id: dispositivos.empresa_id,
       tabela: 'CIDADES',
@@ -127,13 +128,14 @@ async function preparePessoa(newDados, dispositivos) {
         IDCIDADE: newDados.pri_cidade,
       },
     },
+    order: [['data_operacao', 'DESC']],
   });
 
-  if (cidadeResult != null && cidadeResult[0].dados) {
-    cidadeResult = lowerCaseAllKey(JSON.parse(cidadeResult[0].dados));
+  if (cidadeResult != null && cidadeResult.dados) {
+    cidadeResult = lowerCaseAllKey(cidadeResult.dados);
   }
 
-  let paisResult = await replicacao.findAll({
+  let paisResult = await replicacao.findOne({
     where: {
       empresa_id: dispositivos.empresa_id,
       tabela: 'PAISES',
@@ -141,10 +143,11 @@ async function preparePessoa(newDados, dispositivos) {
         IDPAIS: newDados.idpais,
       },
     },
+    order: [['data_operacao', 'DESC']],
   });
 
-  if (paisResult != null && paisResult[0].dados) {
-    paisResult = lowerCaseAllKey(JSON.parse(paisResult[0].dados));
+  if (paisResult != null && paisResult.dados) {
+    paisResult = lowerCaseAllKey(paisResult.dados);
   }
 
   let obsPessoasResult = await replicacao.findAll({
@@ -159,8 +162,8 @@ async function preparePessoa(newDados, dispositivos) {
     },
   });
 
-  if (obsPessoasResult != null) {
-    obsPessoasResult = lowerCaseAllKey(JSON.parse(obsPessoasResult[0].dados));
+  if (obsPessoasResult != null && obsPessoasResult.length > 0) {
+    obsPessoasResult = lowerCaseAllKey(obsPessoasResult[0].dados);
   }
 
   const endereco = {
@@ -169,7 +172,7 @@ async function preparePessoa(newDados, dispositivos) {
     cep: newDados.pri_cep,
     bairro: newDados.pri_bairro,
     numero: newDados.numeroender !== '' ? newDados.numeroender : 'S/N',
-    pais: paisResult ? paisResult.descricao : '',
+    pais: paisResult && paisResult.length > 0 ? paisResult.descricao : 'Brasil',
     cidade: {
       idcidade: cidadeResult ? parseInt(cidadeResult.idcidade, 10) : 0,
       cidade: cidadeResult ? cidadeResult.descricao : '',
@@ -268,7 +271,7 @@ async function preparePedido(newDados, dispositivos) {
     },
   });
 
-  if (buscaDadosEmpresa === null) {
+  if (buscaDadosEmpresa === null || buscaDadosEmpresa.length === 0) {
     buscaDadosEmpresa = {
       padraoVendedores: newDados.idempresa,
       padraoClientes: newDados.idempresa,
@@ -293,8 +296,8 @@ async function preparePedido(newDados, dispositivos) {
       },
     },
   });
-  if (pessoa !== null) {
-    pessoa = JSON.parse(pessoa[0].dados);
+  if (pessoa !== null && pessoa.length > 0) {
+    pessoa = pessoa[0].dados;
     pessoa = await preparePessoa(pessoa, dispositivos);
   }
   newDados.cliente = pessoa;
@@ -307,8 +310,8 @@ async function preparePedido(newDados, dispositivos) {
       },
     },
   });
-  if (condipgto !== null) {
-    condipgto = JSON.parse(condipgto[0].dados);
+  if (condipgto !== null && condipgto.length > 0) {
+    condipgto = condipgto[0].dados;
     condipgto = await prepareCondicaopgto(condipgto, dispositivos);
   }
   newDados.condicaopgto = condipgto;
@@ -323,8 +326,8 @@ async function preparePedido(newDados, dispositivos) {
     },
   });
 
-  if (formapgto !== null) {
-    formapgto = JSON.parse(formapgto[0].dados);
+  if (formapgto !== null && formapgto.length > 0) {
+    formapgto = formapgto[0].dados;
     formapgto = await prepareFormapgto(formapgto, dispositivos);
   }
   newDados.formapgto = formapgto;
@@ -341,8 +344,8 @@ async function preparePedido(newDados, dispositivos) {
     },
   });
 
-  if (vendedor !== null) {
-    vendedor = JSON.parse(vendedor[0].dados);
+  if (vendedor !== null && vendedor.length > 0) {
+    vendedor = vendedor[0].dados;
     vendedor = await preparePessoa(vendedor, dispositivos);
   }
   newDados.vendedor = vendedor;
@@ -404,7 +407,7 @@ async function preparePedido(newDados, dispositivos) {
 
   const produtosPedido = [];
   for (let i = 0; i < produtos.length; i += 1) {
-    const produto = lowerCaseAllKey(JSON.parse(produtos[i].dados));
+    const produto = lowerCaseAllKey(produtos[i].dados);
     produto.valorvenda = produto.valorunitario;
     produto.idempresa = produto.idempresapedido;
     produtosPedido.push(produto);
@@ -415,7 +418,7 @@ async function preparePedido(newDados, dispositivos) {
   return newDados;
 }
 
-async function prepareProduto(newDados, dispositivos) {
+async function prepareProduto(newDados, _dispositivos) {
   newDados = lowerCaseAllKey(newDados);
 
   newDados.unidademedida = newDados.un;

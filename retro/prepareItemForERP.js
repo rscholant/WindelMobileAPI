@@ -71,9 +71,10 @@ async function prepareMobileCliente(newDados) {
   ];
 
   const filteredDados = {};
-  Object.keys(colunas).forEach((coluna) => {
+  // eslint-disable-next-line no-restricted-syntax
+  for (const coluna of colunas) {
     filteredDados[coluna] = newDados[coluna];
-  });
+  }
 
   if (typeof filteredDados.SEXO === 'string') {
     filteredDados.SEXO = convertClienteSexoToSexoERP(filteredDados.SEXO);

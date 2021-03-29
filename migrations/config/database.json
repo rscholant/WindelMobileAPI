@@ -5,17 +5,18 @@
     "database": "sinc_replicacao",
     "host": "127.0.0.1",
     "port": "3307",
-    "dialect": "mysql",
+    "dialect": "mariadb",
     "define": {
       "freezeTableName": true
-    }
+    },
+    "dialectOptions": { "autoJsonMap": false }
   },
   "test": {
     "username": "root",
     "password": null,
     "database": "database_test",
     "host": "127.0.0.1",
-    "dialect": "mysql",
+    "dialect": "mariadb",
     "define": {
       "freezeTableName": true
     }
@@ -25,7 +26,7 @@
     "password": null,
     "database": "database_production",
     "host": "127.0.0.1",
-    "dialect": "mysql",
+    "dialect": "mariadb",
     "define": {
       "freezeTableName": true
     }

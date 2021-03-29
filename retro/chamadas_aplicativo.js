@@ -64,16 +64,15 @@ module.exports = (expressApp, jsonParser) => {
           });
           return;
         }
-        const buscaEmpresa = await empresa.findAll({
-          limit: 1,
+        const buscaEmpresa = await empresa.findOne({
           where: {
             id: dispositivos.empresa_id,
           },
         });
         const mask = /(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/;
-        const cnpjEmpresa = String(buscaEmpresa[0].cnpj);
+        const cnpjEmpresa = String(buscaEmpresa.cnpj);
 
-        let empresas = await replicacao.findAll({
+        const empresas = await replicacao.findOne({
           where: {
             empresa_id: dispositivos.empresa_id,
             tabela: 'EMPRESAS',
@@ -93,10 +92,7 @@ module.exports = (expressApp, jsonParser) => {
           return;
         }
 
-        empresas = JSON.parse(empresas[0].dados);
-
         let ultimoidpedido = await replicacao.findAll({
-          limit: 1,
           attributes: [[Sequelize.json('dados.IDPEDIDO'), 'id']],
           where: {
             empresa_id: dispositivos.empresa_id,
@@ -105,14 +101,14 @@ module.exports = (expressApp, jsonParser) => {
           order: [[Sequelize.json('dados.IDPEDIDO'), 'DESC']],
         });
 
-        if (ultimoidpedido === null) {
+        if (ultimoidpedido === null || ultimoidpedido.length === 0) {
           ultimoidpedido = { id: 1 };
         }
         ultimoidpedido = ultimoidpedido[0].dataValues.id;
 
         let buscaDadosEmpresa = await replicacao.findAll({
           attributes: [
-            [Sequelize.json('dados.DESCMAX'), 'padraoVendedores'],
+            [Sequelize.json('dados.DESCMAX'), 'descMax'],
             [Sequelize.json('dados.PRODUTOS'), 'padraoProdutos'],
             [Sequelize.json('dados.CLIENTES'), 'padraoClientes'],
             [Sequelize.json('dados.VENDEDORES'), 'padraoVendedores'],
@@ -129,7 +125,7 @@ module.exports = (expressApp, jsonParser) => {
           order: [['data_operacao', 'DESC']],
         });
 
-        if (buscaDadosEmpresa === null) {
+        if (buscaDadosEmpresa === null || buscaDadosEmpresa.length === 0) {
           buscaDadosEmpresa = {
             descMax: 0,
             padraoProdutos: 1,
@@ -148,8 +144,8 @@ module.exports = (expressApp, jsonParser) => {
           status: 'Liberado',
           ultimoidpedido,
           empresa: {
-            idempresa: empresas.IDEMPRESA,
-            cnpj: empresas.CNPJCPF.split(/[^0-9]/).join(''),
+            idempresa: empresas.dados.IDEMPRESA,
+            cnpj: empresas.dados.CNPJCPF.split(/[^0-9]/).join(''),
             padraoclientes: buscaDadosEmpresa.padraoClientes,
             padraovendedores: buscaDadosEmpresa.padraoVendedores,
             padraoprodutos: buscaDadosEmpresa.padraoProdutos,
@@ -308,7 +304,7 @@ module.exports = (expressApp, jsonParser) => {
                 const clienteERP = await prepareItemForERP.mobile_cliente(
                   cliente
                 );
-                if (clienteMobile === null) {
+                if (clienteMobile === null || clienteMobile.length === 0) {
                   const enderecoUUID = UUID.v4();
                   await replicacao.create({
                     empresa_id: dispositivos.empresa_id,
@@ -316,7 +312,7 @@ module.exports = (expressApp, jsonParser) => {
                     tabela: 'MOBILE_CLIENTE',
                     data_operacao: getUTCTime(),
                     situacao: 0,
-                    dados: JSON.stringify(clienteERP),
+                    dados: clienteERP,
                     ultimo_autor: dispositivos.auth,
                   });
                   let cidade = await replicacao.findAll({
@@ -330,7 +326,7 @@ module.exports = (expressApp, jsonParser) => {
                   });
 
                   if (cidade && cidade[0].dados) {
-                    cidade = JSON.parse(cidade[0].dados);
+                    cidade = cidade[0].dados;
                   } else {
                     cidade = { COD_NACIONAL: null };
                   }
@@ -341,7 +337,7 @@ module.exports = (expressApp, jsonParser) => {
                     tabela: 'MOBILE_CLIENTE_ENDERECO',
                     data_operacao: getUTCTime(),
                     situacao: 0,
-                    dados: JSON.stringify({
+                    dados: {
                       IDPESSOA: clienteERP.IDPESSOA,
                       IDEMPRESA: clienteERP.IDEMPRESA,
                       TIPOCADASTRO: clienteERP.TIPOCADASTRO,
@@ -353,14 +349,14 @@ module.exports = (expressApp, jsonParser) => {
                       BAIRRO: cliente.endereco.bairro,
                       IDCIDADE: cidade.COD_NACIONAL,
                       SINC_UUID: enderecoUUID,
-                    }),
+                    },
                     ultimo_autor: dispositivos.auth,
                   });
                 } else {
                   clienteMobile[0].dados = clienteERP;
                   await replicacao.update(
                     {
-                      dados: JSON.stringify(clienteMobile[0].dados),
+                      dados: clienteMobile[0].dados,
                       data_operacao: getUTCTime(),
                       ultimo_autor: dispositivos.auth,
                     },
@@ -390,7 +386,7 @@ module.exports = (expressApp, jsonParser) => {
                   const enderecoUUID = clienteMobileEndereco.uuid;
                   await replicacao.update(
                     {
-                      dados: JSON.stringify({
+                      dados: {
                         IDPESSOA: clienteERP.IDPESSOA,
                         IDEMPRESA: clienteERP.IDEMPRESA,
                         TIPOCADASTRO: clienteERP.TIPOCADASTRO,
@@ -402,7 +398,7 @@ module.exports = (expressApp, jsonParser) => {
                         BAIRRO: cliente.endereco.BAIRRO,
                         IDCIDADE: cliente.endereco.IDCIDADE,
                         SINC_UUID: enderecoUUID,
-                      }),
+                      },
                       data_operacao: getUTCTime(),
                       ultimo_autor: dispositivos.auth,
                     },
@@ -472,7 +468,7 @@ module.exports = (expressApp, jsonParser) => {
       const clientes = [];
       Object.keys(results).forEach((key) => {
         if ({}.hasOwnProperty.call(results, key)) {
-          clientes.push(JSON.parse(results[key].dados));
+          clientes.push(results[key].dados);
         }
       });
 
@@ -539,7 +535,7 @@ module.exports = (expressApp, jsonParser) => {
               })
               .then(async (result) => {
                 if (result !== null) {
-                  const dados = JSON.parse(result.dados);
+                  const { dados } = result;
                   retorno.push(
                     await prepareItemForMobile.cliente(dados, dispositivos)
                   );
@@ -570,7 +566,7 @@ module.exports = (expressApp, jsonParser) => {
         });
         return;
       }
-      const dispositivos = dispositivo.findOne({
+      const dispositivos = await dispositivo.findOne({
         where: { auth: token_dispositivo },
       });
 
@@ -601,14 +597,15 @@ module.exports = (expressApp, jsonParser) => {
               );
               await replicacao.create({
                 empresa_id: dispositivos.empresa_id,
+                tabela: 'MOBILE_PEDIDO',
                 uuid: UUID.v4(),
                 data_operacao: getUTCTime(),
                 situacao: 0,
-                dados: JSON.stringify(pedidoERP),
+                dados: pedidoERP,
                 ultimo_autor: dispositivos.auth,
               });
 
-              await replicacao.delete({
+              await replicacao.destroy({
                 where: {
                   empresa_id: dispositivos.empresa_id,
                   tabela: 'MOBILE_PEDIDO_PRODUTOS',
@@ -628,7 +625,7 @@ module.exports = (expressApp, jsonParser) => {
                     tabela: 'MOBILE_PEDIDO_PRODUTOS',
                     data_operacao: getUTCTime(),
                     situacao: 0,
-                    dados: JSON.stringify(produtosERP[i]),
+                    dados: produtosERP[i],
                     ultimo_autor: dispositivos.auth,
                   })
                 );
@@ -662,7 +659,7 @@ module.exports = (expressApp, jsonParser) => {
         });
         return;
       }
-      const dispositivos = dispositivo.findOne({
+      const dispositivos = await dispositivo.findOne({
         where: { auth: token_dispositivo },
       });
 
@@ -697,11 +694,10 @@ module.exports = (expressApp, jsonParser) => {
                     MAC: pedido.mac,
                   },
                 },
+                order: [['data_operacao', 'DESC']],
               })
               .then(async (dataPedido) => {
-                if (dataPedido !== null) {
-                  dataPedido.dados = JSON.parse(dataPedido.dados);
-
+                if (dataPedido && dataPedido.dados !== null) {
                   pedido = await prepareItemForMobile.pedido(
                     dataPedido.dados,
                     dispositivos
@@ -738,7 +734,7 @@ module.exports = (expressApp, jsonParser) => {
         return;
       }
 
-      const dispositivos = dispositivo.findOne({
+      const dispositivos = await dispositivo.findOne({
         where: { auth: token_dispositivo },
       });
 
@@ -780,7 +776,7 @@ module.exports = (expressApp, jsonParser) => {
         return;
       }
 
-      const dispositivos = dispositivo.findOne({
+      const dispositivos = await dispositivo.findOne({
         where: { auth: token_dispositivo },
       });
 
@@ -797,7 +793,7 @@ module.exports = (expressApp, jsonParser) => {
 
       const nomeCidade = req.params.cidade;
 
-      const result = replicacao.findAll({
+      const result = await replicacao.findAll({
         where: {
           empresa_id: dispositivos.empresa_id,
           tabela: 'CIDADES',
@@ -811,7 +807,7 @@ module.exports = (expressApp, jsonParser) => {
 
       const cidades = [];
       for (let i = 0; i < result.length; i += 1) {
-        cidades.push(JSON.parse(result[i].dados));
+        cidades.push(result[i].dados);
       }
 
       res.send(cidades);
@@ -831,7 +827,7 @@ module.exports = (expressApp, jsonParser) => {
       return;
     }
 
-    const dispositivos = dispositivo.findOne({
+    const dispositivos = await dispositivo.findOne({
       where: { auth: token_dispositivo },
     });
 
@@ -845,7 +841,7 @@ module.exports = (expressApp, jsonParser) => {
       });
       return;
     }
-    const result = replicacao.findAll({
+    const result = await replicacao.findAll({
       where: {
         empresa_id: dispositivos.empresa_id,
         tabela: 'CIDADES',
@@ -855,7 +851,7 @@ module.exports = (expressApp, jsonParser) => {
     const cidades = [];
     const promises = [];
     for (let i = 0; i < result.length; i += 1) {
-      const objeto = JSON.parse(result[i].dados);
+      const objeto = result[i].dados;
       promises.push(
         prepareItemForMobile.prepareCidade(objeto).then((results) => {
           cidades.push(results);
@@ -891,7 +887,7 @@ module.exports = (expressApp, jsonParser) => {
         return;
       }
 
-      const dispositivos = dispositivo.findOne({
+      const dispositivos = await dispositivo.findOne({
         where: { auth: token_dispositivo },
       });
 
@@ -949,7 +945,7 @@ module.exports = (expressApp, jsonParser) => {
       }
 
       const linhasBanco = await replicacao.findAll({
-        limit: 100,
+        limit: 200,
         where: {
           empresa_id: dispositivos.empresa_id,
           tabela: tabelaConsulta,
@@ -960,16 +956,11 @@ module.exports = (expressApp, jsonParser) => {
             situacao: 2,
             dados: {
               [Op.not]: null,
-              [Op.not]: {
-                [Op.like]: 'null',
-              },
-              [Op.not]: {
-                [Op.like]: '%[]%',
-              },
             },
           },
           ...extraConditions,
         },
+        order: [['data_operacao', 'ASC']],
       });
 
       const promises = [];
@@ -977,21 +968,22 @@ module.exports = (expressApp, jsonParser) => {
 
       Object.keys(linhasBanco).forEach((key) => {
         if ({}.hasOwnProperty.call(linhasBanco, key)) {
-          const dados = JSON.parse(linhasBanco[key].dados);
+          const { dados } = linhasBanco[key];
           const newDados = {};
-
-          Object.keys(dados).forEach((dadoKey) => {
-            if ({}.hasOwnProperty.call(dados, dadoKey)) {
-              newDados[dadoKey.toLowerCase()] = dados[dadoKey];
-            }
-          });
+          if (dados) {
+            Object.keys(dados).forEach((dadoKey) => {
+              if ({}.hasOwnProperty.call(dados, dadoKey)) {
+                newDados[dadoKey.toLowerCase()] = dados[dadoKey];
+              }
+            });
+          }
           const objeto = {};
           objeto.operacao = `${linhasBanco[key].situacao}`;
           objeto.data = linhasBanco[key].data_operacao;
 
           if (tabela in prepareItemForMobile) {
             promises.push(
-              prepareItemForMobile[tabela](newDados, dispositivo).then(
+              prepareItemForMobile[tabela](newDados, dispositivos).then(
                 (results) => {
                   objeto.registro = results;
                 }
@@ -1000,7 +992,7 @@ module.exports = (expressApp, jsonParser) => {
           } else {
             promises.push(
               prepareItemForMobile
-                .prepareDefault(newDados, dispositivo)
+                .prepareDefault(newDados, dispositivos)
                 .then((results) => {
                   objeto.registro = results;
                 })

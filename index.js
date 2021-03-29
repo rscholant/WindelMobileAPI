@@ -68,9 +68,7 @@ app.post('/empresa', jsonParser, async (req, res) => {
     await empresa.update(
       {
         nome: emp_data.nome,
-        dados_conexao: emp_data.dados_conexao
-          ? JSON.stringify(emp_data.dados_conexao)
-          : '',
+        dados_conexao: emp_data.dados_conexao ? emp_data.dados_conexao : '',
       },
       { where: { id: empresas[0].id } }
     );
@@ -114,7 +112,7 @@ app.delete('/dispositivo', jsonParser, async (req, res) => {
     });
     return;
   }
-  await dispositivo.delete({
+  await dispositivo.destroy({
     where: {
       empresa_id: empresas[0].id,
       mac_address: req.body.mac_address,
@@ -200,7 +198,7 @@ app.post('/modifications', jsonParser, async (req, res) => {
 
   const authToken = req.body.auth;
 
-  const results = dispositivo.findAll({ where: { auth: authToken } });
+  const results = await dispositivo.findAll({ where: { auth: authToken } });
 
   if (results.length === 0) {
     // nenhum dispositivo encontrada
@@ -220,7 +218,7 @@ app.post('/modifications', jsonParser, async (req, res) => {
   try {
     if (req.body.action === 'get') {
       const data = await replicacao.findAll({
-        limit: 100,
+        limit: 200,
         where: {
           empresa_id: dispositivos.empresa_id,
           data_operacao: {
@@ -241,23 +239,26 @@ app.post('/modifications', jsonParser, async (req, res) => {
       } else {
         result.next_since = req.body.since;
       }
+      for (let i = 0; i < result.data.length; i += 1) {
+        result.data[i].dados = JSON.stringify(result.data[i].dados);
+      }
     } else if (req.body.action === 'new') {
       const valuesMarkers = [];
       const params = [];
       for (let i = 0; i < req.body.modifications.length; i += 1) {
         const timeMS = new Date().getTime();
         const modification = req.body.modifications[i];
-        const dados = JSON.stringify(modification.dados);
+        const { dados } = modification;
         valuesMarkers.push('(?,?,?,?,?,?,?)');
-        params.push(
-          dispositivos.empresa_id,
-          modification.uuid,
-          modification.tabela,
-          timeMS,
-          modification.situacao,
+        params.push({
+          empresa_id: dispositivos.empresa_id,
+          uuid: modification.uuid,
+          tabela: modification.tabela,
+          data_operacao: timeMS + i,
+          situacao: modification.situacao,
           dados,
-          authToken
-        );
+          ultimo_autor: authToken,
+        });
       }
 
       await replicacao.bulkCreate(params, {
@@ -430,7 +431,7 @@ app.get('/id-generator/:auth/:tabela', jsonParser, async (req, res) => {
   }
 
   const dispositivos = results[0];
-  let consulta_id = await id_control.findAll({
+  let consulta_id = await id_control.findOne({
     where: {
       empresa_id: dispositivos.empresa_id,
       tabela: req.params.tabela,
@@ -478,7 +479,7 @@ app.get('/id-watcher/:auth/:tabela', jsonParser, async (req, res) => {
 
   const dispositivos = results[0];
 
-  let consulta_id = await id_control.findAll({
+  let consulta_id = await id_control.findOne({
     where: {
       empresa_id: dispositivos.empresa_id,
       tabela: req.params.tabela,

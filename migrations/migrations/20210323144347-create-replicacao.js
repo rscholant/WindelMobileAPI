@@ -51,7 +51,9 @@ module.exports = {
         },
       })
       .then(() =>
-        queryInterface.addIndex('replicacao', ['id', 'uuid'], { unique: true })
+        queryInterface.addIndex('replicacao', ['uuid', 'tabela'], {
+          unique: true,
+        })
       )
       .then(() =>
         queryInterface.addIndex(

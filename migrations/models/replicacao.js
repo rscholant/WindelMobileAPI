@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
       empresa_id: DataTypes.INTEGER,
       uuid: DataTypes.STRING,
       tabela: DataTypes.STRING,
-      data_operacao: DataTypes.DATE,
+      data_operacao: DataTypes.BIGINT,
       situacao: DataTypes.INTEGER,
       dados: DataTypes.JSON,
       ultimo_autor: DataTypes.STRING,
