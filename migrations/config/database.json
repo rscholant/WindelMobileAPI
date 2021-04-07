@@ -1,15 +1,19 @@
 {
   "development": {
-    "username": "apiuserws",
-    "password": "Api21Mobile20!",
-    "database": "sinc_replicacao",
-    "host": "localhost",
-    "port": "3306",
+    "username": "root",
+    "password": "s2crm49y!",
+    "database": "sinc_integrador",
+    "host": "192.168.1.245",
+    "port": "3307",
     "dialect": "mariadb",
     "define": {
       "freezeTableName": true
     },
-    "dialectOptions": { "autoJsonMap": false }
+    "dialectOptions": { "autoJsonMap": false },
+    "pool" : {
+      "max": 5000,
+      "min": 1
+    }
   },
   "test": {
     "username": "root",

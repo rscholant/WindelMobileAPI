@@ -103,8 +103,9 @@ module.exports = (expressApp, jsonParser) => {
 
         if (ultimoidpedido === null || ultimoidpedido.length === 0) {
           ultimoidpedido = { id: 1 };
+        } else {
+          ultimoidpedido = ultimoidpedido[0].dataValues.id;
         }
-        ultimoidpedido = ultimoidpedido[0].dataValues.id;
 
         let buscaDadosEmpresa = await replicacao.findAll({
           attributes: [
@@ -945,7 +946,7 @@ module.exports = (expressApp, jsonParser) => {
       }
 
       const linhasBanco = await replicacao.findAll({
-        limit: 200,
+        limit: 50,
         where: {
           empresa_id: dispositivos.empresa_id,
           tabela: tabelaConsulta,

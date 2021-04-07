@@ -2,4 +2,4 @@ node_modules/
 .env.prod
 .env.dev
 DB/
-.ssh/server-ec2-integrador.pem
+.ssh/rafa-aws-mobile.pem
