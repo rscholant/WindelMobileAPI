@@ -1,0 +1,39 @@
+{
+  "development": {
+    "username": "apiuserws",
+    "password": "Api21Mobile20!",
+    "database": "sinc_replicacao",
+    "host": "localhost",
+    "port": "3306",
+    "dialect": "mariadb",
+    "logging": true,
+    "define": {
+      "freezeTableName": true
+    },
+    "dialectOptions": { "autoJsonMap": false },
+    "pool" : {
+	"max": 5000,
+"min": 1,
+    }
+  },
+  "test": {
+    "username": "root",
+    "password": null,
+    "database": "database_test",
+    "host": "127.0.0.1",
+    "dialect": "mariadb",
+    "define": {
+      "freezeTableName": true
+    }
+  },
+  "production": {
+    "username": "root",
+    "password": null,
+    "database": "database_production",
+    "host": "127.0.0.1",
+    "dialect": "mariadb",
+    "define": {
+      "freezeTableName": true
+    }
+  }
+}

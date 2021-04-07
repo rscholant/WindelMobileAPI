@@ -155,6 +155,7 @@ module.exports = (expressApp, jsonParser) => {
           },
         });
       } catch (err) {
+        console.log(err);
         res.send({ Erro: err });
       }
     }
