@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop */
 const axios = require('axios');
 const fs = require('fs');
 const UUID = require('uuid');
@@ -232,6 +233,21 @@ module.exports = (expressApp, jsonParser) => {
           },
         });
         return;
+      }
+      if (
+        req.body.token_onesignal &&
+        req.body.token_onesignal !== dispositivos.token_onesignal
+      ) {
+        await dispositivo.update(
+          {
+            token_onesignal: req.body.token_onesignal,
+          },
+          {
+            where: {
+              auth: token_dispositivo,
+            },
+          }
+        );
       }
       const mask = /(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})/;
       const macAddress = String(dispositivos.mac_address);
@@ -584,62 +600,72 @@ module.exports = (expressApp, jsonParser) => {
       }
       const lista = req.body;
       const promises = [];
+      const listaRetorno = [];
+      // eslint-disable-next-line no-restricted-syntax
+      for (const key of lista) {
+        const pedido = key;
 
-      Object.keys(lista).forEach((key) => {
-        if ({}.hasOwnProperty.call(lista, key)) {
-          const pedido = lista[key];
+        const consPedido = await replicacao.findOne({
+          where: {
+            empresa_id: dispositivos.empresa_id,
+            tabela: 'MOBILE_PEDIDO',
+          },
+          order: [
+            [Sequelize.cast(Sequelize.json('dados.IDPEDIDO'), 'INT'), 'desc'],
+          ],
+        });
 
-          pedido.old = pedido.idpedido;
-          pedido.new = pedido.idpedido;
+        if (
+          consPedido !== null &&
+          consPedido.dados &&
+          consPedido.dados.IDPEDIDO
+        ) {
+          pedido.idpedido = parseInt(consPedido.dados.IDPEDIDO, 10) + 1;
+        }
+        const pedidoERP = await prepareItemForERP.mobile_pedido(pedido);
+        const produtosERP = await prepareItemForERP.mobile_pedido_produtos(
+          pedido
+        );
+        await replicacao.create({
+          empresa_id: dispositivos.empresa_id,
+          tabela: 'MOBILE_PEDIDO',
+          uuid: UUID.v4(),
+          data_operacao: getUTCTime(),
+          situacao: 0,
+          dados: pedidoERP,
+          ultimo_autor: dispositivos.auth,
+        });
 
-          promises.push(
-            prepareItemForERP.mobile_pedido(pedido).then(async (pedidoERP) => {
-              const produtosERP = await prepareItemForERP.mobile_pedido_produtos(
-                pedido
-              );
-              await replicacao.create({
-                empresa_id: dispositivos.empresa_id,
-                tabela: 'MOBILE_PEDIDO',
-                uuid: UUID.v4(),
-                data_operacao: getUTCTime(),
-                situacao: 0,
-                dados: pedidoERP,
-                ultimo_autor: dispositivos.auth,
-              });
+        await replicacao.destroy({
+          where: {
+            empresa_id: dispositivos.empresa_id,
+            tabela: 'MOBILE_PEDIDO_PRODUTOS',
+            dados: {
+              IDPEDIDO: pedidoERP.IDPEDIDO,
+              MACPEDIDO: pedidoERP.MAC,
+            },
+          },
+        });
 
-              await replicacao.destroy({
-                where: {
-                  empresa_id: dispositivos.empresa_id,
-                  tabela: 'MOBILE_PEDIDO_PRODUTOS',
-                  dados: {
-                    IDPEDIDO: pedidoERP.IDPEDIDO,
-                    MACPEDIDO: pedidoERP.MAC,
-                  },
-                },
-              });
-
-              const promisesLoop = [];
-              for (let i = 0; i < produtosERP.length; i += 1) {
-                promisesLoop.push(
-                  replicacao.create({
-                    empresa_id: dispositivos.empresa_id,
-                    uuid: UUID.v4(),
-                    tabela: 'MOBILE_PEDIDO_PRODUTOS',
-                    data_operacao: getUTCTime(),
-                    situacao: 0,
-                    dados: produtosERP[i],
-                    ultimo_autor: dispositivos.auth,
-                  })
-                );
-              }
-              await Promise.all(promisesLoop);
-              lista[key] = pedido;
+        const promisesLoop = [];
+        for (let i = 0; i < produtosERP.length; i += 1) {
+          promisesLoop.push(
+            replicacao.create({
+              empresa_id: dispositivos.empresa_id,
+              uuid: UUID.v4(),
+              tabela: 'MOBILE_PEDIDO_PRODUTOS',
+              data_operacao: getUTCTime(),
+              situacao: 0,
+              dados: produtosERP[i],
+              ultimo_autor: dispositivos.auth,
             })
           );
         }
-      });
-      await Promise.all(promises);
-      res.send(lista);
+        await Promise.all(promisesLoop);
+        listaRetorno.push(pedido);
+      }
+
+      res.send(listaRetorno);
     }
   );
 

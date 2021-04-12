@@ -186,7 +186,68 @@ app.post('/dispositivo', jsonParser, async (req, res) => {
     result: true,
   });
 });
+app.get('/modifications', jsonParser, async (req, res) => {
+  if (!req.header.auth) {
+    res.send({
+      result: false,
+      message: "Missing 'auth' on request Body",
+    });
+    return;
+  }
 
+  const authToken = req.header.auth;
+
+  const dispositivos = await dispositivo.findOne({
+    where: { auth: authToken },
+  });
+
+  if (dispositivos === null) {
+    res.send({
+      result: false,
+      message: 'Dispositivo não encontrada para o Auth',
+    });
+    return;
+  }
+
+  const result = await replicacao.findAll({
+    attributes: ['tabela'],
+    where: {
+      empresa_id: dispositivos.empresa_id,
+      data_operacao: {
+        [Op.gt]: req.body.since,
+      },
+      ultimo_autor: {
+        [Op.ne]: authToken,
+      },
+      tabela: {
+        [Op.in]: [
+          'CIDADES',
+          'PESSOAS',
+          'PRODUTOS',
+          'EMPRESAS',
+          'FORMAPGTO',
+          'CONDPAG',
+          'MOBILE_PEDIDO',
+          'PARAMETROS',
+          'GRUPOS_PROD',
+          'MOBILE_CLIENTE',
+          'OBSPESSOAS',
+          'OBSSITUACAOPESSOAS',
+          'PESSOAS_CONTATOS',
+          'PRODUTOS_OBS',
+          'PRODUTO_PESSOAS',
+          'TITULOS',
+          'UF',
+          'PAISES',
+          'UN',
+        ],
+      },
+    },
+    group: 'tabela',
+  });
+  const resultado = result.map((item) => item.tabela);
+  res.send({ result: result.length > 0, tabelas: resultado.join() });
+});
 app.post('/modifications', jsonParser, async (req, res) => {
   if (!req.body.auth) {
     res.send({
