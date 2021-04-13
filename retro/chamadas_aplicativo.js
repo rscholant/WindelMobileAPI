@@ -620,6 +620,8 @@ module.exports = (expressApp, jsonParser) => {
           consPedido.dados &&
           consPedido.dados.IDPEDIDO
         ) {
+          pedido.old = pedido.idpedido;
+          pedido.new = parseInt(consPedido.dados.IDPEDIDO, 10) + 1;
           pedido.idpedido = parseInt(consPedido.dados.IDPEDIDO, 10) + 1;
         }
         const pedidoERP = await prepareItemForERP.mobile_pedido(pedido);
