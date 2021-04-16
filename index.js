@@ -186,8 +186,8 @@ app.post('/dispositivo', jsonParser, async (req, res) => {
     result: true,
   });
 });
-app.get('/modifications', jsonParser, async (req, res) => {
-  if (!req.header.auth) {
+app.post('/haveModifications', jsonParser, async (req, res) => {
+  if (!req.headers.authtoken) {
     res.send({
       result: false,
       message: "Missing 'auth' on request Body",
@@ -195,7 +195,7 @@ app.get('/modifications', jsonParser, async (req, res) => {
     return;
   }
 
-  const authToken = req.header.auth;
+  const authToken = req.headers.authtoken;
 
   const dispositivos = await dispositivo.findOne({
     where: { auth: authToken },
@@ -208,45 +208,69 @@ app.get('/modifications', jsonParser, async (req, res) => {
     });
     return;
   }
+  let whereClause = '';
+  const dados = { ...req.body };
+  for (const [table, since] of Object.entries(dados)) {
+    if (table.includes('esp')) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    let whereTable = '';
+    switch (table) {
+      case 'pessoa':
+        whereTable = 'PESSOAS';
+        break;
+      case 'formapgto':
+        whereTable = 'FORMAPGTO';
+        break;
+      case 'condicaopgto':
+        whereTable = 'CONDPAG';
+        break;
+      case 'pedido':
+        whereTable = 'MOBILE_PEDIDO';
+        break;
+      case 'produto':
+        whereTable = 'PRODUTOS';
+        break;
+      case 'parametro':
+        whereTable = 'PARAMETROS';
+        break;
+      default:
+        whereTable = table.toUpperCase();
+        break;
+    }
 
+    if (whereClause === '') {
+      whereClause += `((tabela = '${whereTable}' and data_operacao > ${since} )`;
+    } else {
+      whereClause += ` OR (tabela = '${whereTable}' and data_operacao > ${since} )`;
+    }
+  }
+  whereClause += `) and (dados is not null or situacao != 1) and empresa_id = ${dispositivos.empresa_id} and ultimo_autor != '${authToken}'`;
   const result = await replicacao.findAll({
     attributes: ['tabela'],
-    where: {
-      empresa_id: dispositivos.empresa_id,
-      data_operacao: {
-        [Op.gt]: req.body.since,
-      },
-      ultimo_autor: {
-        [Op.ne]: authToken,
-      },
-      tabela: {
-        [Op.in]: [
-          'CIDADES',
-          'PESSOAS',
-          'PRODUTOS',
-          'EMPRESAS',
-          'FORMAPGTO',
-          'CONDPAG',
-          'MOBILE_PEDIDO',
-          'PARAMETROS',
-          'GRUPOS_PROD',
-          'MOBILE_CLIENTE',
-          'OBSPESSOAS',
-          'OBSSITUACAOPESSOAS',
-          'PESSOAS_CONTATOS',
-          'PRODUTOS_OBS',
-          'PRODUTO_PESSOAS',
-          'TITULOS',
-          'UF',
-          'PAISES',
-          'UN',
-        ],
-      },
-    },
+    where: Sequelize.literal(whereClause),
     group: 'tabela',
   });
-  const resultado = result.map((item) => item.tabela);
-  res.send({ result: result.length > 0, tabelas: resultado.join() });
+  const resultado = result.map((item) => {
+    switch (item.tabela) {
+      case 'PESSOAS':
+        return 'PESSOA';
+      case 'FORMAPGTO':
+        return 'FORMAPGTO';
+      case 'CONDPAG':
+        return 'CONDICAOPGTO';
+      case 'MOBILE_PEDIDO':
+        return 'PEDIDO';
+      case 'PRODUTOS':
+        return 'PRODUTO';
+      case 'PARAMETROS':
+        return 'parametro';
+      default:
+        return item.tabela.toUpperCase();
+    }
+  });
+  res.send({ result: result.length > 0, tabelas: resultado });
 });
 app.post('/modifications', jsonParser, async (req, res) => {
   if (!req.body.auth) {

@@ -12,6 +12,7 @@ const {
   dispositivo,
   replicacao,
   id_control,
+  version_control,
 } = require('../migrations/models');
 
 function getUTCTime(now) {
@@ -36,7 +37,7 @@ module.exports = (expressApp, jsonParser) => {
     jsonParser,
     async (req, res) => {
       try {
-        const { mac } = req.query;
+        const { mac, version } = req.query;
 
         if (!mac) {
           res.send({
@@ -70,6 +71,37 @@ module.exports = (expressApp, jsonParser) => {
             id: dispositivos.empresa_id,
           },
         });
+
+        if (version && parseInt(version, 10) !== dispositivos.app_version) {
+          await dispositivo.update(
+            {
+              app_version: version,
+            },
+            {
+              where: {
+                auth: dispositivos.auth,
+              },
+            }
+          );
+        }
+        if (version) {
+          const versions = await version_control.findOne({
+            where: {
+              version: {
+                [Op.gt]: parseInt(version, 10),
+              },
+            },
+            order: [['version', 'DESC']],
+          });
+
+          if (versions && versions.validity <= new Date()) {
+            res.send({
+              result: false,
+              control: { erro: true, mensagem: versions.message },
+            });
+            return;
+          }
+        }
         const mask = /(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/;
         const cnpjEmpresa = String(buscaEmpresa.cnpj);
 
@@ -234,6 +266,7 @@ module.exports = (expressApp, jsonParser) => {
         });
         return;
       }
+
       if (
         req.body.token_onesignal &&
         req.body.token_onesignal !== dispositivos.token_onesignal
@@ -249,7 +282,7 @@ module.exports = (expressApp, jsonParser) => {
           }
         );
       }
-      const mask = /(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})/;
+      /* const mask = /(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})(\w{2})/;
       const macAddress = String(dispositivos.mac_address);
       axios
         .patch('http://webservice.windel.com.br/dispositivos-moveis/1', {
@@ -258,7 +291,7 @@ module.exports = (expressApp, jsonParser) => {
         })
         .catch((error) => {
           console.error(error);
-        });
+        }); */
 
       res.send('true');
     }
