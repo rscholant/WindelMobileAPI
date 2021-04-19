@@ -90,6 +90,11 @@ async function prepareMobileCliente(newDados) {
 
   filteredDados.TIPOPESSOA = newDados.TIPOPESSOA === 'FISICA' ? 0 : 1;
 
+  filteredDados.OBSERVACOES = filteredDados.OBSERVACOES.replace(
+    /[^\p{L}\p{N}\p{P}\p{Z}]/gu,
+    ''
+  );
+
   if (typeof filteredDados.EMAIL !== 'string') {
     filteredDados.EMAIL = filteredDados.EMAIL.join(';'); // filteredDados.EMAIL[0];
   }
@@ -135,8 +140,8 @@ async function prepareMobilePedido(pedido) {
   pedidoERP.IDDOC = null;
   pedidoERP.HASHPESSOAREPLIC = pedido.cliente.hashreplic;
   pedidoERP.INFOREPROVADO = null;
-  pedidoERP.OBS = pedido.obs;
-  pedidoERP.OBS_NOTA = pedido.obs_nota;
+  pedidoERP.OBS = pedido.obs.replace(/[^\p{L}\p{N}\p{P}\p{Z}]/gu, '');
+  pedidoERP.OBS_NOTA = pedido.obs_nota.replace(/[^\p{L}\p{N}\p{P}\p{Z}]/gu, '');
   pedidoERP.VLRSUBTOTAL = pedido.valorsubtotal;
   pedidoERP.SINC_UUID = null;
   pedidoERP.DTENTREGA = pedido.dtEntrega;

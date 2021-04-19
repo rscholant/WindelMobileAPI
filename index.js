@@ -264,8 +264,6 @@ app.post('/haveModifications', jsonParser, async (req, res) => {
         return 'PEDIDO';
       case 'PRODUTOS':
         return 'PRODUTO';
-      case 'PARAMETROS':
-        return 'parametro';
       default:
         return item.tabela.toUpperCase();
     }
