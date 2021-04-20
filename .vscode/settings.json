@@ -1,4 +1,14 @@
 {
     "editor.formatOnSave": true,
     "git.ignoreLimitWarning": true,
+    "cSpell.words": [
+      "CONDPAG",
+      "FORMAPGTO",
+      "PARAMETROS",
+      "condicaopgto",
+      "operacao",
+      "parametro",
+      "replicacao",
+      "situacao"
+    ],
   }

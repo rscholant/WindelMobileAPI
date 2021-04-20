@@ -321,7 +321,7 @@ async function preparePedido(newDados, dispositivos) {
       empresa_id: dispositivos.empresa_id,
       tabela: 'FORMAPGTO',
       dados: {
-        IDCONDPAG: newDados.idformapgto,
+        IDFORMAPGTO: newDados.idformapgto,
       },
     },
   });

@@ -208,7 +208,7 @@ app.post('/haveModifications', jsonParser, async (req, res) => {
     });
     return;
   }
-  let whereClause = '';
+  let whereClause = ``;
   const dados = { ...req.body };
   for (const [table, since] of Object.entries(dados)) {
     if (table.includes('esp')) {
@@ -241,12 +241,19 @@ app.post('/haveModifications', jsonParser, async (req, res) => {
     }
 
     if (whereClause === '') {
-      whereClause += `((tabela = '${whereTable}' and data_operacao > ${since} )`;
+      whereClause += `(
+        (tabela = '${whereTable}'
+          and data_operacao > ${since} )`;
     } else {
-      whereClause += ` OR (tabela = '${whereTable}' and data_operacao > ${since} )`;
+      whereClause += `
+      OR (tabela = '${whereTable}'
+        and data_operacao > ${since} )`;
     }
   }
-  whereClause += `) and (dados is not null or situacao != 1) and empresa_id = ${dispositivos.empresa_id} and ultimo_autor != '${authToken}'`;
+  whereClause = `empresa_id = ${dispositivos.empresa_id}
+    AND ultimo_autor != '${authToken}'
+    AND ${whereClause})
+    AND (dados is not null or situacao != 1) `;
   const result = await replicacao.findAll({
     attributes: ['tabela'],
     where: Sequelize.literal(whereClause),
