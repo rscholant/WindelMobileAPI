@@ -601,6 +601,7 @@ app.get('/id-watcher/:auth/:tabela', jsonParser, async (req, res) => {
 });
 
 require('./retro/chamadas_aplicativo.js')(app, jsonParser);
+require('./routes.new')(app, jsonParser);
 
 app.all('*', jsonParser, (req, res) => {
   res.send('Rota invalida');
