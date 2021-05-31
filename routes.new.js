@@ -8,6 +8,7 @@ const {
   replicacao,
   version_control,
 } = require('./migrations/models');
+const prepareItemForMobile = require('./retro/prepareItemForMobile');
 
 module.exports = (expressApp, jsonParser) => {
   expressApp.get('/device/info', jsonParser, async (req, res) => {
@@ -38,8 +39,7 @@ module.exports = (expressApp, jsonParser) => {
       });
       return;
     }
-
-    const buscaEmpresas = await empresa.find({
+    const buscaEmpresas = await empresa.findAll({
       where: { id: { [Op.in]: devices.empresas_licenciadas.id } },
     });
 
@@ -55,6 +55,7 @@ module.exports = (expressApp, jsonParser) => {
         }
       );
     }
+
     if (version) {
       const versions = await version_control.findOne({
         where: {
@@ -72,47 +73,193 @@ module.exports = (expressApp, jsonParser) => {
         });
         return;
       }
-
-      const dadosEmpresa = buscaEmpresas.map(async (dadoEmpresa) => {
-        const mask = /(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/;
-        const cnpjEmpresa = String(dadoEmpresa.cnpj);
-        const dados = await replicacao.findOne({
-          where: {
-            empresa_id: { [Op.in]: devices.empresas_licenciadas.id },
-            tabela: 'EMPRESAS',
-            dados: {
-              CNPJCPF: {
-                [Op.like]: cnpjEmpresa.replace(mask, '$1%$2%$3%$4%$5'),
-              },
+    }
+    const promises = await buscaEmpresas.map(async (dadoEmpresa) => {
+      const mask = /(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/;
+      const cnpjEmpresa = String(dadoEmpresa.cnpj);
+      const { dados } = await replicacao.findOne({
+        where: {
+          empresa_id: { [Op.in]: devices.empresas_licenciadas.id },
+          tabela: 'EMPRESAS',
+          dados: {
+            CNPJCPF: {
+              [Op.like]: cnpjEmpresa.replace(mask, '$1%$2%$3%$4%$5'),
             },
           },
-        });
-        let result;
-        if (dados) {
-          result = {
-            idEmpresa: dados.replicacao.IDEMPRESA,
-            nome: dados.replicacao.NOME,
-            endereco: dados.replicacao.ENDERECO,
-            bairro: dados.replicacao.BAIRRO,
-            cidade: dados.replicacao.CIDADE,
-            CNPJCPF: dados.replicacao.CNPJCPF,
-            fone: dados.replicacao.FONE,
-            nroEndereco: dados.replicacao.NROENDER,
-            padraoClientes: dados.replicacao.CLIENTES,
-            padraoVendedores: dados.replicacao.VENDEDORES,
-            padraoProdutos: dados.replicacao.PRODUTOS,
-            percMaxDesconto: dados.replicacao.DESCMAX,
-            padraoDescCondPgto: true,
-          };
-        }
-        return result || null;
+        },
       });
-      return {
-        ID: devices.id,
-        descricao: devices.nome,
-        habilitado: true,
-        empresas: dadosEmpresa,
-      };
+      let result;
+      if (dados) {
+        result = {
+          idEmpresa: dados.IDEMPRESA,
+          nome: dados.NOME,
+          endereco: dados.ENDERECO,
+          bairro: dados.BAIRRO,
+          cidade: dados.CIDADE,
+          CNPJCPF: dados.CNPJCPF,
+          fone: dados.FONE,
+          nroEndereco: dados.NROENDER,
+          padraoClientes: dados.CLIENTES,
+          padraoVendedores: dados.VENDEDORES,
+          padraoProdutos: dados.PRODUTOS,
+          percMaxDesconto: dados.DESCMAX,
+          padraoDescCondPgto: true,
+        };
+      }
+      return result || null;
+    });
+    let dadosEmpresa;
+    await Promise.all(promises).then((results) => {
+      dadosEmpresa = results;
+    });
+    res.send({
+      ID: devices.id,
+      descricao: devices.nome,
+      habilitado: true,
+      empresas: dadosEmpresa,
+    });
+    return;
+  });
+
+  expressApp.get('/pacotesincronizacao', jsonParser, async (req, res) => {
+    const { cnpj, uuid } = req.headers;
+
+    if (!uuid) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo não encontrado!',
+        },
+      });
+      return;
     }
+    const mask = /\D/g;
+
+    const dadosEmpresa = await empresa.findOne({
+      where: { cnpj: cnpj.replace(mask, '') },
+    });
+    const dispositivos = await dispositivo.findOne({
+      where: { mac_address: uuid },
+    });
+
+    if (dispositivos == null) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo bloqueado!',
+        },
+      });
+      return;
+    }
+
+    const { tabela } = req.query;
+    const { data } = req.query;
+
+    let tabelaConsulta = '';
+    let extraConditions = {};
+    switch (tabela) {
+      case 'vendedor':
+        tabelaConsulta = 'PESSOAS';
+        extraConditions = {
+          dados: {
+            IDTIPO_PS: 5,
+          },
+        };
+        break;
+      case 'cliente':
+        tabelaConsulta = 'PESSOAS';
+        extraConditions = {
+          dados: {
+            IDTIPO_PS: 1,
+          },
+        };
+        break;
+      case 'formapgto':
+        tabelaConsulta = 'FORMAPGTO';
+        break;
+      case 'condicaopgto':
+        tabelaConsulta = 'CONDPAG';
+        break;
+      case 'pedido':
+        tabelaConsulta = 'MOBILE_PEDIDO';
+        break;
+      case 'produto':
+        tabelaConsulta = 'PRODUTOS';
+        break;
+      case 'parametro':
+        tabelaConsulta = 'PARAMETROS';
+        break;
+      default:
+        tabelaConsulta = tabela.toUpperCase();
+        break;
+    }
+
+    const linhasBanco = await replicacao.findAll({
+      limit: 50,
+      where: {
+        empresa_id: dadosEmpresa.id,
+        tabela: tabelaConsulta,
+        data_operacao: {
+          [Op.gt]: data,
+        },
+        [Op.or]: {
+          situacao: 2,
+          dados: {
+            [Op.not]: null,
+          },
+        },
+        ...extraConditions,
+      },
+      order: [['data_operacao', 'ASC']],
+    });
+
+    const promises = [];
+    const objetos = [];
+
+    Object.keys(linhasBanco).forEach((key) => {
+      if ({}.hasOwnProperty.call(linhasBanco, key)) {
+        const { dados } = linhasBanco[key];
+        const newDados = {};
+        if (dados) {
+          Object.keys(dados).forEach((dadoKey) => {
+            if ({}.hasOwnProperty.call(dados, dadoKey)) {
+              newDados[dadoKey.toLowerCase()] = dados[dadoKey];
+            }
+          });
+        }
+        const objeto = {};
+        objeto.operacao = `${linhasBanco[key].situacao}`;
+        objeto.data = linhasBanco[key].data_operacao;
+
+        if (tabela in prepareItemForMobile) {
+          promises.push(
+            prepareItemForMobile[tabela](newDados, dispositivos).then(
+              (results) => {
+                objeto.registro = results;
+              }
+            )
+          );
+        } else {
+          promises.push(
+            prepareItemForMobile
+              .prepareDefault(newDados, dispositivos)
+              .then((results) => {
+                objeto.registro = results;
+              })
+          );
+        }
+        objetos.push(objeto);
+      }
+    });
+    await Promise.all(promises);
+    res.send({
+      result: objetos,
+      control: {
+        erro: false,
+        mensagem: '',
+      },
+    });
   });
 };
