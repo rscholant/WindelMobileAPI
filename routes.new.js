@@ -123,7 +123,6 @@ module.exports = (expressApp, jsonParser) => {
 
   expressApp.get('/pacotesincronizacao', jsonParser, async (req, res) => {
     const { cnpj, uuid } = req.headers;
-
     if (!uuid) {
       res.send({
         result: false,
@@ -139,6 +138,7 @@ module.exports = (expressApp, jsonParser) => {
     const dadosEmpresa = await empresa.findOne({
       where: { cnpj: cnpj.replace(mask, '') },
     });
+
     const dispositivos = await dispositivo.findOne({
       where: { mac_address: uuid },
     });
