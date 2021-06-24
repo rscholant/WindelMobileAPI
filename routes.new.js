@@ -138,7 +138,6 @@ module.exports = (expressApp, jsonParser) => {
     const dadosEmpresa = await empresa.findOne({
       where: { cnpj: cnpj.replace(mask, '') },
     });
-
     const dispositivos = await dispositivo.findOne({
       where: { mac_address: uuid },
     });
@@ -197,7 +196,7 @@ module.exports = (expressApp, jsonParser) => {
     }
 
     const linhasBanco = await replicacao.findAll({
-      limit: 50,
+      limit: 200,
       where: {
         empresa_id: dadosEmpresa.id,
         tabela: tabelaConsulta,
@@ -254,8 +253,25 @@ module.exports = (expressApp, jsonParser) => {
       }
     });
     await Promise.all(promises);
+    const count = await replicacao.count({
+      where: {
+        empresa_id: dadosEmpresa.id,
+        tabela: tabelaConsulta,
+        data_operacao: {
+          [Op.gt]: data,
+        },
+        [Op.or]: {
+          situacao: 2,
+          dados: {
+            [Op.not]: null,
+          },
+        },
+        ...extraConditions,
+      },
+    });
     res.send({
       result: objetos,
+      count,
       control: {
         erro: false,
         mensagem: '',
