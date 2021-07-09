@@ -1,5 +1,6 @@
 /* eslint-disable consistent-return */
 /* eslint-disable no-useless-return */
+const crypto = require('crypto');
 
 const { Op } = require('sequelize');
 const {
@@ -11,6 +12,66 @@ const {
 const prepareItemForMobile = require('./retro/prepareItemForMobile');
 
 module.exports = (expressApp, jsonParser) => {
+  expressApp.post('/device/requestNew', jsonParser, async (req, res) => {
+    const { uuid, cnpj, name } = req.body;
+    if (!uuid || !cnpj || !name) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dados não informados.',
+        },
+      });
+      return;
+    }
+    const mask = /(\w{2})(\w{3})(\w{3})(\w{4})(\w{2})/;
+    const buscaEmpresa = await empresa.findOne({
+      where: { cnpj: { [Op.like]: cnpj.replace(mask, '$1%$2%$3%$4%$5') } },
+    });
+    if (buscaEmpresa && buscaEmpresa.length > 0) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Empresa não encontrada!',
+        },
+      });
+      return;
+    }
+    const devices = await dispositivo.findOne({
+      where: {
+        mac_address: uuid.toLowerCase(),
+      },
+    });
+
+    if (devices && devices.length > 0) {
+      res.send({
+        result: false,
+        control: {
+          erro: false,
+          mensagem: 'Dispositivo já cadastrado, esperando por liberação!',
+        },
+      });
+      return;
+    }
+    const auth = crypto.createHash('md5').update(uuid).digest('hex');
+
+    await dispositivo.create({
+      empresa_id: buscaEmpresa.id,
+      auth,
+      nome: name,
+      mac_address: uuid,
+    });
+
+    res.send({
+      result: true,
+      control: {
+        erro: false,
+        mensagem: 'Solicitação enviada!',
+      },
+    });
+    return;
+  });
   expressApp.get('/device/info', jsonParser, async (req, res) => {
     const { uuid, version } = req.query;
     if (!uuid) {
@@ -34,7 +95,22 @@ module.exports = (expressApp, jsonParser) => {
         result: false,
         control: {
           erro: true,
+          deviceFound: false,
           mensagem: 'Device not found!',
+        },
+      });
+      return;
+    }
+    if (
+      !devices.empresas_licenciadas ||
+      devices.empresas_licenciadas.length === 0
+    ) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          deviceFound: true,
+          mensagem: 'Dispositivo bloqueado!',
         },
       });
       return;
