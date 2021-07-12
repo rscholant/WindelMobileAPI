@@ -1,6 +1,8 @@
+/* eslint-disable no-restricted-syntax */
 /* eslint-disable consistent-return */
 /* eslint-disable no-useless-return */
 const crypto = require('crypto');
+const Sequelize = require('sequelize');
 
 const { Op } = require('sequelize');
 const {
@@ -353,5 +355,114 @@ module.exports = (expressApp, jsonParser) => {
         mensagem: '',
       },
     });
+  });
+
+  expressApp.post('/checkUpdates', jsonParser, async (req, res) => {
+    const { cnpj, uuid } = req.headers;
+
+    if (!uuid) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo não encontrado!',
+        },
+      });
+      return;
+    }
+    const mask = /\D/g;
+
+    const dadosEmpresa = await empresa.findOne({
+      where: { cnpj: cnpj.replace(mask, '') },
+    });
+    const dispositivos = await dispositivo.findOne({
+      where: { mac_address: uuid },
+    });
+
+    if (
+      dispositivos === null ||
+      !dispositivos.empresas_licenciadas ||
+      dispositivos.empresas_licenciadas.length === 0
+    ) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo bloqueado!',
+        },
+      });
+      return;
+    }
+
+    let whereClause = ``;
+    const dados = { ...req.body };
+    for (const [table, since] of Object.entries(dados)) {
+      if (table.includes('esp')) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      let whereTable = '';
+      switch (table) {
+        case 'pessoa':
+          whereTable = 'PESSOAS';
+          break;
+        case 'formapgto':
+          whereTable = 'FORMAPGTO';
+          break;
+        case 'condicaopgto':
+          whereTable = 'CONDPAG';
+          break;
+        case 'pedido':
+          whereTable = 'MOBILE_PEDIDO';
+          break;
+        case 'produto':
+          whereTable = 'PRODUTOS';
+          break;
+        case 'parametro':
+          whereTable = 'PARAMETROS';
+          break;
+        default:
+          whereTable = table.toUpperCase();
+          break;
+      }
+
+      if (whereClause === '') {
+        whereClause += `(
+          (tabela = '${whereTable}'
+            and data_operacao > ${since} )`;
+      } else {
+        whereClause += `
+        OR (tabela = '${whereTable}'
+          and data_operacao > ${since} )`;
+      }
+    }
+    whereClause = `empresa_id = ${dadosEmpresa.id}
+      AND ultimo_autor != '${dispositivos.auth}'
+      AND ${whereClause})
+      AND (dados is not null or situacao != 1) `;
+
+    const result = await replicacao.findAll({
+      attributes: ['tabela'],
+      where: Sequelize.literal(whereClause),
+      group: 'tabela',
+    });
+
+    const resultado = result.map((item) => {
+      switch (item.tabela) {
+        case 'PESSOAS':
+          return 'PESSOA';
+        case 'FORMAPGTO':
+          return 'FORMAPGTO';
+        case 'CONDPAG':
+          return 'CONDICAOPGTO';
+        case 'MOBILE_PEDIDO':
+          return 'PEDIDO';
+        case 'PRODUTOS':
+          return 'PRODUTO';
+        default:
+          return item.tabela.toUpperCase();
+      }
+    });
+    res.send({ result: result.length > 0, tabelas: resultado });
   });
 };
