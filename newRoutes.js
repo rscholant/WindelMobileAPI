@@ -10,6 +10,7 @@ const {
   dispositivo,
   replicacao,
   version_control,
+  logs,
 } = require('./migrations/models');
 const prepareItemForMobile = require('./retro/prepareItemForMobile');
 
@@ -356,7 +357,57 @@ module.exports = (expressApp, jsonParser) => {
       },
     });
   });
+  expressApp.post('/newLog', jsonParser, async (req, res) => {
+    const { cnpj, uuid } = req.headers;
+    const { description, logDate } = req.body;
 
+    if (!uuid) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo não encontrado!',
+        },
+      });
+      return;
+    }
+    const mask = /\D/g;
+
+    const dadosEmpresa = await empresa.findOne({
+      where: { cnpj: cnpj.replace(mask, '') },
+    });
+    const dispositivos = await dispositivo.findOne({
+      where: { mac_address: uuid },
+    });
+
+    if (
+      dispositivos === null ||
+      !dispositivos.empresas_licenciadas ||
+      dispositivos.empresas_licenciadas.length === 0
+    ) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo bloqueado!',
+        },
+      });
+      return;
+    }
+    const log = await logs.create({
+      device_id: dispositivos.id,
+      description,
+      logDate: new Date(logDate),
+    });
+    res.send({
+      result: true,
+      control: {
+        erro: false,
+        mensagem: log,
+      },
+    });
+    return;
+  });
   expressApp.post('/checkUpdates', jsonParser, async (req, res) => {
     const { cnpj, uuid } = req.headers;
 
