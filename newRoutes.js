@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const Sequelize = require('sequelize');
 
+const UUID = require('uuid');
 const { Op } = require('sequelize');
 const {
   empresa,
@@ -12,8 +13,23 @@ const {
   version_control,
   logs,
 } = require('./migrations/models');
+const prepareItemForERP = require('./retro/prepareItemForERP');
 const prepareItemForMobile = require('./retro/prepareItemForMobile');
 
+function getUTCTime(now) {
+  if (!now) {
+    now = new Date();
+  }
+  return Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    now.getUTCHours(),
+    now.getUTCMinutes(),
+    now.getUTCSeconds(),
+    now.getUTCMilliseconds()
+  );
+}
 module.exports = (expressApp, jsonParser) => {
   expressApp.post('/device/requestNew', jsonParser, async (req, res) => {
     const { uuid, cnpj, name } = req.body;
@@ -515,5 +531,182 @@ module.exports = (expressApp, jsonParser) => {
       }
     });
     res.send({ result: result.length > 0, tabelas: resultado });
+  });
+
+  expressApp.post('/newClient', jsonParser, async (req, res) => {
+    const { cnpj, uuid } = req.headers;
+
+    if (!uuid) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo não encontrado!',
+        },
+      });
+      return;
+    }
+    const mask = /\D/g;
+
+    const dadosEmpresa = await empresa.findOne({
+      where: { cnpj: cnpj.replace(mask, '') },
+    });
+    const dispositivos = await dispositivo.findOne({
+      where: { mac_address: uuid },
+    });
+
+    if (
+      dispositivos === null ||
+      !dispositivos.empresas_licenciadas ||
+      dispositivos.empresas_licenciadas.length === 0
+    ) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo bloqueado!',
+        },
+      });
+      return;
+    }
+
+    const lista = req.body;
+    const promises = [];
+    Object.keys(lista).forEach((key) => {
+      if ({}.hasOwnProperty.call(lista, key)) {
+        const cliente = lista[key];
+        cliente.statusReplic = 'EM_REPLICACAO';
+        promises.push(
+          replicacao
+            .findAll({
+              where: {
+                empresa_id: dispositivos.empresa_id,
+                tabela: 'MOBILE_CLIENTE',
+                dados: {
+                  IDPESSOA: cliente.idpessoa,
+                  IDEMPRESA: cliente.idempresa,
+                  TIPOCADASTRO: cliente.tipocadastro,
+                },
+              },
+            })
+            .then(async (clienteMobile) => {
+              const clienteERP = await prepareItemForERP.mobile_cliente(
+                cliente
+              );
+              if (clienteMobile === null || clienteMobile.length === 0) {
+                const enderecoUUID = UUID.v4();
+                await replicacao.create({
+                  empresa_id: dispositivos.empresa_id,
+                  uuid: UUID.v4(),
+                  tabela: 'MOBILE_CLIENTE',
+                  data_operacao: getUTCTime(),
+                  situacao: 0,
+                  dados: clienteERP,
+                  ultimo_autor: dispositivos.auth,
+                });
+                let cidade = await replicacao.findAll({
+                  where: {
+                    empresa_id: dispositivos.empresa_id,
+                    tabela: 'CIDADES',
+                    dados: {
+                      IDCIDADE: cliente.endereco.cidade.idcidade,
+                    },
+                  },
+                });
+
+                if (cidade && cidade[0].dados) {
+                  cidade = cidade[0].dados;
+                } else {
+                  cidade = { COD_NACIONAL: null };
+                }
+
+                await replicacao.create({
+                  empresa_id: dispositivos.empresa_id,
+                  uuid: enderecoUUID,
+                  tabela: 'MOBILE_CLIENTE_ENDERECO',
+                  data_operacao: getUTCTime(),
+                  situacao: 0,
+                  dados: {
+                    IDPESSOA: clienteERP.IDPESSOA,
+                    IDEMPRESA: clienteERP.IDEMPRESA,
+                    TIPOCADASTRO: clienteERP.TIPOCADASTRO,
+                    HASHREPLIC: clienteERP.HASHREPLIC,
+                    CEP: cliente.endereco.cep,
+                    LOGRADOURO: cliente.endereco.logradouro,
+                    NUMERO: cliente.endereco.numero,
+                    COMPLEMENTO: cliente.endereco.complemento,
+                    BAIRRO: cliente.endereco.bairro,
+                    IDCIDADE: cidade.COD_NACIONAL,
+                    SINC_UUID: enderecoUUID,
+                  },
+                  ultimo_autor: dispositivos.auth,
+                });
+              } else {
+                clienteMobile[0].dados = clienteERP;
+                await replicacao.update(
+                  {
+                    dados: clienteMobile[0].dados,
+                    data_operacao: getUTCTime(),
+                    ultimo_autor: dispositivos.auth,
+                  },
+                  {
+                    where: {
+                      uuid: clienteMobile[0].uuid,
+                      tabela: 'MOBILE_CLIENTE',
+                      empresa_id: dispositivos.empresa_id,
+                    },
+                  }
+                );
+                let clienteMobileEndereco = await replicacao.findAll({
+                  where: {
+                    empresa_id: dispositivos.empresa_id,
+                    tabela: 'CLIENTE_MOBILE_ENDERECO',
+                    dados: {
+                      IDPESSOA: cliente.idpessoa,
+                      IDEMPRESA: cliente.idempresa,
+                      TIPOCADASTRO: cliente.tipocadastro,
+                      HASHREPLIC: cliente.hashreplic,
+                    },
+                  },
+                });
+
+                clienteMobileEndereco = clienteMobileEndereco[0];
+
+                const enderecoUUID = clienteMobileEndereco.uuid;
+                await replicacao.update(
+                  {
+                    dados: {
+                      IDPESSOA: clienteERP.IDPESSOA,
+                      IDEMPRESA: clienteERP.IDEMPRESA,
+                      TIPOCADASTRO: clienteERP.TIPOCADASTRO,
+                      HASHREPLIC: clienteERP.HASHREPLIC,
+                      CEP: cliente.endereco.CEP,
+                      LOGRADOURO: cliente.endereco.LOGRADOURO,
+                      NUMERO: cliente.endereco.NUMERO,
+                      COMPLEMENTO: cliente.endereco.COMPLEMENTO,
+                      BAIRRO: cliente.endereco.BAIRRO,
+                      IDCIDADE: cliente.endereco.IDCIDADE,
+                      SINC_UUID: enderecoUUID,
+                    },
+                    data_operacao: getUTCTime(),
+                    ultimo_autor: dispositivos.auth,
+                  },
+                  {
+                    where: {
+                      uuid: enderecoUUID,
+                      tabela: 'MOBILE_CLIENTE_ENDERECO',
+                      empresa_id: dispositivos.empresa_id,
+                    },
+                  }
+                );
+              }
+
+              lista[key] = cliente;
+            })
+        );
+      }
+    });
+    await Promise.all(promises);
+    res.send(lista);
   });
 };
