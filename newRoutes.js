@@ -613,8 +613,7 @@ module.exports = (expressApp, jsonParser) => {
                     },
                   },
                 });
-
-                if (cidade && cidade[0].dados) {
+                if (cidade && cidade.length > 0 && cidade[0].dados) {
                   cidade = cidade[0].dados;
                 } else {
                   cidade = { COD_NACIONAL: null };
