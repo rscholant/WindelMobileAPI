@@ -1002,6 +1002,14 @@ module.exports = (expressApp, jsonParser) => {
         case 'parametro':
           tabelaConsulta = 'PARAMETROS';
           break;
+        case 'titulos':
+          tabelaConsulta = 'TITULOS';
+          extraConditions = {
+            situacao: {
+              [Op.not]: 2,
+            },
+          };
+          break;
         default:
           tabelaConsulta = tabela.toUpperCase();
           break;

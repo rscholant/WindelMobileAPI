@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop */
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable consistent-return */
 /* eslint-disable no-useless-return */
@@ -91,6 +92,7 @@ module.exports = (expressApp, jsonParser) => {
     });
     return;
   });
+
   expressApp.get('/device/info', jsonParser, async (req, res) => {
     const { uuid, version } = req.query;
     if (!uuid) {
@@ -373,6 +375,7 @@ module.exports = (expressApp, jsonParser) => {
       },
     });
   });
+
   expressApp.post('/newLog', jsonParser, async (req, res) => {
     const { cnpj, uuid } = req.headers;
     const { description, logDate } = req.body;
@@ -424,6 +427,7 @@ module.exports = (expressApp, jsonParser) => {
     });
     return;
   });
+
   expressApp.post('/checkUpdates', jsonParser, async (req, res) => {
     const { cnpj, uuid } = req.headers;
 
@@ -707,5 +711,112 @@ module.exports = (expressApp, jsonParser) => {
     });
     await Promise.all(promises);
     res.send(lista);
+  });
+
+  expressApp.post('/newOrder', jsonParser, async (req, res) => {
+    const { cnpj, uuid } = req.headers;
+
+    if (!uuid) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo não encontrado!',
+        },
+      });
+      return;
+    }
+    const mask = /\D/g;
+
+    const dadosEmpresa = await empresa.findOne({
+      where: { cnpj: cnpj.replace(mask, '') },
+    });
+    const dispositivos = await dispositivo.findOne({
+      where: { mac_address: uuid },
+    });
+
+    if (
+      dispositivos === null ||
+      !dispositivos.empresas_licenciadas ||
+      dispositivos.empresas_licenciadas.length === 0
+    ) {
+      res.send({
+        result: false,
+        control: {
+          erro: true,
+          mensagem: 'Dispositivo bloqueado!',
+        },
+      });
+      return;
+    }
+    const lista = req.body;
+    const promises = [];
+    const listaRetorno = [];
+    for (const key of lista) {
+      const pedido = key;
+
+      const consPedido = await replicacao.findOne({
+        where: {
+          empresa_id: dispositivos.empresa_id,
+          tabela: 'MOBILE_PEDIDO',
+        },
+        order: [
+          [Sequelize.cast(Sequelize.json('dados.IDPEDIDO'), 'INT'), 'desc'],
+        ],
+      });
+
+      if (
+        consPedido !== null &&
+        consPedido.dados &&
+        consPedido.dados.IDPEDIDO
+      ) {
+        pedido.old = pedido.idpedido;
+        pedido.new = parseInt(consPedido.dados.IDPEDIDO, 10) + 1;
+        pedido.idpedido = parseInt(consPedido.dados.IDPEDIDO, 10) + 1;
+      }
+      const pedidoERP = await prepareItemForERP.mobile_pedido(pedido);
+      const produtosERP = await prepareItemForERP.mobile_pedido_produtos(
+        pedido
+      );
+      await replicacao.create({
+        empresa_id: dispositivos.empresa_id,
+        tabela: 'MOBILE_PEDIDO',
+        uuid: UUID.v4(),
+        data_operacao: getUTCTime(),
+        situacao: 0,
+        dados: pedidoERP,
+        ultimo_autor: dispositivos.auth,
+      });
+
+      await replicacao.destroy({
+        where: {
+          empresa_id: dispositivos.empresa_id,
+          tabela: 'MOBILE_PEDIDO_PRODUTOS',
+          dados: {
+            IDPEDIDO: pedidoERP.IDPEDIDO,
+            MACPEDIDO: pedidoERP.MAC,
+          },
+        },
+      });
+
+      const promisesLoop = [];
+      for (let i = 0; i < produtosERP.length; i += 1) {
+        promisesLoop.push(
+          replicacao.create({
+            empresa_id: dispositivos.empresa_id,
+            uuid: UUID.v4(),
+            tabela: 'MOBILE_PEDIDO_PRODUTOS',
+            data_operacao: getUTCTime(),
+            situacao: 0,
+            dados: produtosERP[i],
+            ultimo_autor: dispositivos.auth,
+          })
+        );
+      }
+      await Promise.all(promisesLoop);
+      listaRetorno.push(pedido);
+    }
+
+    res.send(listaRetorno);
   });
 };
