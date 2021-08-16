@@ -15,7 +15,7 @@ const {
   logs,
 } = require('./migrations/models');
 const prepareItemForERP = require('./retro/prepareItemForERP');
-const prepareItemForMobile = require('./retro/prepareItemForMobile');
+const prepareItemForMobile = require('./retro/prepareItemForMobileNew');
 
 function getUTCTime(now) {
   if (!now) {
@@ -331,7 +331,7 @@ module.exports = (expressApp, jsonParser) => {
 
         if (tabela in prepareItemForMobile) {
           promises.push(
-            prepareItemForMobile[tabela](newDados, dispositivos).then(
+            prepareItemForMobile[tabela](newDados, dadosEmpresa).then(
               (results) => {
                 objeto.registro = results;
               }
@@ -340,7 +340,7 @@ module.exports = (expressApp, jsonParser) => {
         } else {
           promises.push(
             prepareItemForMobile
-              .prepareDefault(newDados, dispositivos)
+              .prepareDefault(newDados, dadosEmpresa)
               .then((results) => {
                 objeto.registro = results;
               })
@@ -584,7 +584,7 @@ module.exports = (expressApp, jsonParser) => {
           replicacao
             .findAll({
               where: {
-                empresa_id: dispositivos.empresa_id,
+                empresa_id: dadosEmpresa.id,
                 tabela: 'MOBILE_CLIENTE',
                 dados: {
                   IDPESSOA: cliente.idpessoa,
@@ -600,7 +600,7 @@ module.exports = (expressApp, jsonParser) => {
               if (clienteMobile === null || clienteMobile.length === 0) {
                 const enderecoUUID = UUID.v4();
                 await replicacao.create({
-                  empresa_id: dispositivos.empresa_id,
+                  empresa_id: dadosEmpresa.id,
                   uuid: UUID.v4(),
                   tabela: 'MOBILE_CLIENTE',
                   data_operacao: getUTCTime(),
@@ -610,7 +610,7 @@ module.exports = (expressApp, jsonParser) => {
                 });
                 let cidade = await replicacao.findAll({
                   where: {
-                    empresa_id: dispositivos.empresa_id,
+                    empresa_id: dadosEmpresa.id,
                     tabela: 'CIDADES',
                     dados: {
                       IDCIDADE: cliente.endereco.cidade.idcidade,
@@ -624,7 +624,7 @@ module.exports = (expressApp, jsonParser) => {
                 }
 
                 await replicacao.create({
-                  empresa_id: dispositivos.empresa_id,
+                  empresa_id: dadosEmpresa.id,
                   uuid: enderecoUUID,
                   tabela: 'MOBILE_CLIENTE_ENDERECO',
                   data_operacao: getUTCTime(),
@@ -656,13 +656,13 @@ module.exports = (expressApp, jsonParser) => {
                     where: {
                       uuid: clienteMobile[0].uuid,
                       tabela: 'MOBILE_CLIENTE',
-                      empresa_id: dispositivos.empresa_id,
+                      empresa_id: dadosEmpresa.id,
                     },
                   }
                 );
                 let clienteMobileEndereco = await replicacao.findAll({
                   where: {
-                    empresa_id: dispositivos.empresa_id,
+                    empresa_id: dadosEmpresa.id,
                     tabela: 'CLIENTE_MOBILE_ENDERECO',
                     dados: {
                       IDPESSOA: cliente.idpessoa,
@@ -698,7 +698,7 @@ module.exports = (expressApp, jsonParser) => {
                     where: {
                       uuid: enderecoUUID,
                       tabela: 'MOBILE_CLIENTE_ENDERECO',
-                      empresa_id: dispositivos.empresa_id,
+                      empresa_id: dadosEmpresa.id,
                     },
                   }
                 );
@@ -757,7 +757,7 @@ module.exports = (expressApp, jsonParser) => {
 
       const consPedido = await replicacao.findOne({
         where: {
-          empresa_id: dispositivos.empresa_id,
+          empresa_id: dadosEmpresa.id,
           tabela: 'MOBILE_PEDIDO',
         },
         order: [
@@ -779,7 +779,7 @@ module.exports = (expressApp, jsonParser) => {
         pedido
       );
       await replicacao.create({
-        empresa_id: dispositivos.empresa_id,
+        empresa_id: dadosEmpresa.id,
         tabela: 'MOBILE_PEDIDO',
         uuid: UUID.v4(),
         data_operacao: getUTCTime(),
@@ -790,7 +790,7 @@ module.exports = (expressApp, jsonParser) => {
 
       await replicacao.destroy({
         where: {
-          empresa_id: dispositivos.empresa_id,
+          empresa_id: dadosEmpresa.id,
           tabela: 'MOBILE_PEDIDO_PRODUTOS',
           dados: {
             IDPEDIDO: pedidoERP.IDPEDIDO,
@@ -803,7 +803,7 @@ module.exports = (expressApp, jsonParser) => {
       for (let i = 0; i < produtosERP.length; i += 1) {
         promisesLoop.push(
           replicacao.create({
-            empresa_id: dispositivos.empresa_id,
+            empresa_id: dadosEmpresa.id,
             uuid: UUID.v4(),
             tabela: 'MOBILE_PEDIDO_PRODUTOS',
             data_operacao: getUTCTime(),

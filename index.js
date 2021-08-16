@@ -4,7 +4,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 
 const app = express();
-const jsonParser = bodyParser.json({ limit: '50mb' });
+const jsonParser = bodyParser.json({ limit: '500mb' });
 const path = require('path');
 const Sequelize = require('sequelize');
 const { Op } = require('sequelize');
