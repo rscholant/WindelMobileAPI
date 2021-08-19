@@ -4,7 +4,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 
 const app = express();
-const jsonParser = bodyParser.json({ limit: '50mb' });
+const jsonParser = bodyParser.json({ limit: '500mb' });
 const path = require('path');
 const Sequelize = require('sequelize');
 const { Op } = require('sequelize');
@@ -600,7 +600,8 @@ app.get('/id-watcher/:auth/:tabela', jsonParser, async (req, res) => {
   });
 });
 
-require('./retro/chamadas_aplicativo.js')(app, jsonParser);
+require('./retro/chamadas_aplicativo')(app, jsonParser);
+require('./newRoutes')(app, jsonParser);
 
 app.all('*', jsonParser, (req, res) => {
   res.send('Rota invalida');

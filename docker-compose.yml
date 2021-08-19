@@ -3,8 +3,18 @@ version: '3'
 services:
   mariadb:
     image: mariadb
+    restart: 'always'
+    volumes:
+      - ./db/conf:/etc/mysql
     environment:
       MYSQL_ROOT_PASSWORD: 's2crm49y!'
       MYSQL_DATABASE: 'sinc_replicacao'
+      MYSQL_USER: 'wsApiSinc'
+      MYSQL_PASSWORD: 'Windel2021MobileSec'
     ports:
       - '3307:3306'
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080

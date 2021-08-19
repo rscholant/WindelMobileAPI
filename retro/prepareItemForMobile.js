@@ -175,6 +175,7 @@ async function preparePessoa(newDados, dispositivos) {
     pais: paisResult && paisResult.length > 0 ? paisResult.descricao : 'Brasil',
     cidade: {
       idcidade: cidadeResult ? parseInt(cidadeResult.idcidade, 10) : 0,
+      ibge: cidadeResult ? parseInt(cidadeResult.cod_nacional, 10) : 0,
       cidade: cidadeResult ? cidadeResult.descricao : '',
       uf: cidadeResult ? cidadeResult.uf : '',
     },
@@ -430,7 +431,7 @@ async function prepareProduto(newDados, _dispositivos) {
   }
   const tmpValores = [];
   tmpValores.push(newDados.vlr_venda);
-  for (let i = 1; i < 5; i += 1) {
+  for (let i = 1; i < 6; i += 1) {
     if (newDados[`vlr${i}`] !== '') {
       tmpValores.push(newDados[`vlr${i}`]);
     }

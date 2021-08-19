@@ -24,6 +24,7 @@ module.exports = (sequelize, DataTypes) => {
       mac_address: DataTypes.STRING,
       token_onesignal: DataTypes.STRING,
       app_version: DataTypes.INTEGER,
+      empresas_licenciadas: DataTypes.JSON,
     },
     {
       sequelize,
