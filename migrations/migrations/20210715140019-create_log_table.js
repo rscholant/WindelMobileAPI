@@ -3,7 +3,7 @@
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     await queryInterface.createTable(
-      'empresa',
+      'logs',
       {
         id: {
           allowNull: false,
@@ -11,14 +11,24 @@ module.exports = {
           primaryKey: true,
           type: Sequelize.INTEGER,
         },
-        nome: {
+        device_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          foreignKey: true,
+          references: {
+            model: 'dispositivo',
+            key: 'id',
+          },
+          onUpdate: 'CASCADE',
+          ondDelete: 'SET NULL',
+        },
+        description: {
+          allowNull: true,
           type: Sequelize.STRING,
         },
-        cnpj: {
-          type: Sequelize.STRING,
-        },
-        dados_conexao: {
-          type: Sequelize.STRING,
+        logDate: {
+          allowNull: false,
+          type: Sequelize.DATE,
         },
         createdAt: {
           allowNull: false,
@@ -31,10 +41,11 @@ module.exports = {
           defaultValue: Sequelize.NOW,
         },
       },
-      { tableName: 'empresa' }
+      { tableName: 'logs' }
     );
   },
+
   down: async (queryInterface, Sequelize) => {
-    await queryInterface.dropTable('empresa');
+    await queryInterface.dropTable('logs');
   },
 };
